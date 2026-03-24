@@ -1,0 +1,528 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Norte Soluções | Planos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-main: #0f1b48;
+        --bg-soft: #13265e;
+        --azul-escuro: #163a5f;
+        --azul-claro: #2f80ed;
+        --accent: #2f80ed;
+        --text: #f7fbff;
+        --muted: #b6c7ea;
+        --white: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Poppins", "Segoe UI", "Trebuchet MS", sans-serif;
+        background: radial-gradient(circle at 85% 5%, #1e2f77 0%, var(--bg-main) 45%, #0a1335 100%);
+        color: var(--text);
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .site {
+        min-height: 100vh;
+      }
+
+      .header {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 22px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .logo {
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: 0.2px;
+      }
+
+      .logo span {
+        color: var(--accent);
+      }
+
+      .menu {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        font-weight: 600;
+        color: #e3edff;
+      }
+
+      .menu a:hover,
+      .menu a.active {
+        color: var(--accent);
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .btn {
+        border: none;
+        border-radius: 999px;
+        padding: 12px 24px;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.2s ease, filter 0.2s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.03);
+      }
+
+      .btn-outline {
+        background: transparent;
+        color: var(--white);
+        border: 2px solid rgba(255, 255, 255, 0.32);
+      }
+
+      .btn-main {
+        background: var(--accent);
+        color: var(--white);
+      }
+
+      .hero {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 28px 24px 12px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgba(47, 128, 237, 0.14);
+        border: 1px solid rgba(47, 128, 237, 0.48);
+        color: #a9d0ff;
+        font-weight: 700;
+        font-size: 0.86rem;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.5rem);
+        line-height: 1.12;
+      }
+
+      h1 strong {
+        color: var(--accent);
+      }
+
+      .lead {
+        margin: 16px 0 0;
+        color: var(--muted);
+        font-size: 1.18rem;
+        line-height: 1.5;
+        max-width: 860px;
+      }
+
+      .section {
+        max-width: 1220px;
+        margin: 10px auto 0;
+        padding: 0 24px 34px;
+      }
+
+      .plans {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+
+      .plan {
+        background: #f8fbff;
+        color: #183560;
+        border-radius: 18px;
+        border: 1px solid rgba(22, 58, 95, 0.14);
+        padding: 22px;
+      }
+
+      .plan h3 {
+        margin: 0;
+        color: var(--azul-escuro);
+        font-size: 1.35rem;
+      }
+
+      .price {
+        margin: 10px 0 12px;
+        font-size: 2rem;
+        color: #1f4f86;
+        font-weight: 800;
+      }
+
+      .price small {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #597290;
+      }
+
+      .plan p {
+        margin: 0 0 12px;
+        color: #4e6889;
+        line-height: 1.5;
+      }
+
+      .plan ul {
+        margin: 0;
+        padding-left: 18px;
+        color: #3c5a7e;
+        line-height: 1.6;
+      }
+
+      .featured {
+        border: 2px solid var(--azul-claro);
+        box-shadow: 0 14px 34px rgba(12, 37, 64, 0.16);
+      }
+
+      .contact {
+        margin-top: 16px;
+        background: linear-gradient(160deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.07));
+        border: 1px solid rgba(255, 255, 255, 0.21);
+        border-radius: 18px;
+        padding: 22px;
+      }
+
+      .contact h2 {
+        margin: 0 0 8px;
+        font-size: 1.6rem;
+      }
+
+      .contact p {
+        margin: 0 0 14px;
+        color: #d4e2ff;
+        line-height: 1.5;
+      }
+
+      .whats {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #d8ebff;
+      }
+
+      .whats strong {
+        color: var(--white);
+      }
+
+      .whats-btn {
+        margin-top: 10px;
+      }
+
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(5, 15, 37, 0.68);
+        backdrop-filter: blur(2px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 50;
+      }
+
+      .modal-overlay.show {
+        display: flex;
+      }
+
+      .modal {
+        width: min(520px, 100%);
+        background: #f8fbff;
+        color: #183560;
+        border-radius: 20px;
+        border: 1px solid rgba(22, 58, 95, 0.16);
+        box-shadow: 0 18px 46px rgba(3, 14, 35, 0.42);
+        padding: 24px;
+      }
+
+      .modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .modal-title {
+        margin: 0;
+        color: var(--azul-escuro);
+        font-size: 1.6rem;
+      }
+
+      .modal-subtitle {
+        margin: 4px 0 0;
+        color: #486488;
+      }
+
+      .modal-close {
+        width: 38px;
+        height: 38px;
+        border-radius: 999px;
+        border: 1px solid #c3d2e4;
+        background: #edf4ff;
+        color: #234d80;
+        font-size: 1.05rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+
+      .field label {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #284c73;
+      }
+
+      .field input {
+        height: 46px;
+        border-radius: 10px;
+        border: 1px solid #bfd1e4;
+        padding: 0 12px;
+        font-size: 1rem;
+      }
+
+      .field input:focus-visible {
+        outline: 3px solid rgba(47, 128, 237, 0.25);
+        border-color: var(--azul-claro);
+      }
+
+      .login-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 6px;
+      }
+
+      .btn-login {
+        background: var(--azul-claro);
+        color: var(--white);
+        flex: 1;
+      }
+
+      .btn-ghost {
+        background: #edf4ff;
+        color: #24578f;
+        flex: 1;
+      }
+
+      body.modal-open {
+        overflow: hidden;
+      }
+
+      @media (max-width: 1100px) {
+        .menu {
+          display: none;
+        }
+
+        .plans {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .header {
+          flex-wrap: wrap;
+        }
+
+        .header-actions {
+          width: 100%;
+        }
+
+        .header-actions .btn {
+          flex: 1;
+        }
+
+        .lead {
+          font-size: 1.05rem;
+        }
+
+        .login-actions {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="site">
+      <header class="header">
+        <a class="logo" href="/">Norte <span>Soluções</span></a>
+
+        <nav class="menu" aria-label="Navegação principal">
+          <a href="/">Início</a>
+          <a href="/solucao.html">Solução</a>
+          <a class="active" href="/planos.html">Planos</a>
+          <a href="/quem-somos.html">Quem somos</a>
+        </nav>
+
+        <div class="header-actions">
+          <a class="btn btn-outline" href="#" data-open-login>Entrar</a>
+          <a class="btn btn-main" href="/registro.html">Começar grátis</a>
+        </div>
+      </header>
+
+      <main class="hero">
+        <span class="eyebrow">Planos para operação de transporte</span>
+        <h1>
+          Escolha o plano certo para sua frota e tenha
+          <strong>controle de custo, média e lucro</strong>
+        </h1>
+        <p class="lead">
+          Temos opções para transportadoras em crescimento e operações mais maduras. Se quiser,
+          montamos uma proposta personalizada com base no tamanho da sua frota e volume de viagens.
+        </p>
+      </main>
+
+      <section class="section">
+        <div class="plans">
+          <article class="plan">
+            <h3>Plano Essencial</h3>
+            <div class="price">R$ 399 <small>/mês</small></div>
+            <p>Para começar com controle operacional básico.</p>
+            <ul>
+              <li>Cadastro de veículos e motoristas</li>
+              <li>Controle de viagens e abastecimentos</li>
+              <li>Relatórios básicos de operação</li>
+            </ul>
+          </article>
+
+          <article class="plan featured">
+            <h3>Plano Profissional</h3>
+            <div class="price">R$ 849 <small>/mês</small></div>
+            <p>Para gestão por indicador e aumento de rentabilidade.</p>
+            <ul>
+              <li>Custo por km e média de consumo</li>
+              <li>Lucro por viagem e margem por rota</li>
+              <li>Painel de produtividade da frota</li>
+            </ul>
+          </article>
+
+          <article class="plan">
+            <h3>Plano Enterprise</h3>
+            <div class="price">Sob consulta</div>
+            <p>Para operações maiores com necessidades avançadas.</p>
+            <ul>
+              <li>Implantação assistida</li>
+              <li>Integrações e regras personalizadas</li>
+              <li>Acompanhamento dedicado</li>
+            </ul>
+          </article>
+        </div>
+
+        <article class="contact">
+          <h2>Falar com comercial pelo WhatsApp</h2>
+          <p>
+            Quer proposta, demonstração ou tirar dúvidas dos planos? Nosso time te atende rápido.
+          </p>
+          <p class="whats">WhatsApp: <strong>+55 (11) 98765-4321</strong></p>
+          <a class="btn btn-main whats-btn" href="https://wa.me/5511987654321" target="_blank" rel="noopener noreferrer">
+            Chamar no WhatsApp
+          </a>
+        </article>
+      </section>
+
+      <div id="loginModal" class="modal-overlay" aria-hidden="true">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+          <header class="modal-header">
+            <div>
+              <h2 id="login-modal-title" class="modal-title">Login do cliente</h2>
+              <p class="modal-subtitle">Já tem acesso? Entre para abrir o sistema.</p>
+            </div>
+            <button type="button" class="modal-close" data-close-login aria-label="Fechar login">x</button>
+          </header>
+
+          <form action="/sistema" method="get">
+            <div class="field">
+              <label for="email">E-mail</label>
+              <input id="email" type="email" name="email" placeholder="seuemail@empresa.com" />
+            </div>
+
+            <div class="field">
+              <label for="senha">Senha</label>
+              <input id="senha" type="password" name="senha" placeholder="Digite sua senha" />
+            </div>
+
+            <div class="login-actions">
+              <button class="btn btn-login" type="submit">Entrar no sistema</button>
+              <button class="btn btn-ghost" type="button">Solicitar demonstração</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const modal = document.getElementById("loginModal");
+      const openButtons = document.querySelectorAll("[data-open-login]");
+      const closeButtons = document.querySelectorAll("[data-close-login]");
+
+      const openModal = () => {
+        modal.classList.add("show");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+      };
+
+      const closeModal = () => {
+        modal.classList.remove("show");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("modal-open");
+      };
+
+      openButtons.forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          openModal();
+        });
+      });
+
+      closeButtons.forEach((button) => {
+        button.addEventListener("click", closeModal);
+      });
+
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          closeModal();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && modal.classList.contains("show")) {
+          closeModal();
+        }
+      });
+    </script>
+  </body>
+</html>
+

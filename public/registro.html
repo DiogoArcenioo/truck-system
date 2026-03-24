@@ -1,0 +1,615 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Norte Soluções | Criar Conta</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-main: #0f1b48;
+        --bg-soft: #13265e;
+        --azul-escuro: #163a5f;
+        --azul-claro: #2f80ed;
+        --accent: #2f80ed;
+        --text: #f7fbff;
+        --muted: #b6c7ea;
+        --white: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Poppins", "Segoe UI", "Trebuchet MS", sans-serif;
+        background: radial-gradient(circle at 85% 5%, #1e2f77 0%, var(--bg-main) 45%, #0a1335 100%);
+        color: var(--text);
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .site {
+        min-height: 100vh;
+      }
+
+      .header {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 22px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .logo {
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: 0.2px;
+      }
+
+      .logo span {
+        color: var(--accent);
+      }
+
+      .menu {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        font-weight: 600;
+        color: #e3edff;
+      }
+
+      .menu a:hover,
+      .menu a.active {
+        color: var(--accent);
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .btn {
+        border: none;
+        border-radius: 999px;
+        padding: 12px 24px;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.2s ease, filter 0.2s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.03);
+      }
+
+      .btn-outline {
+        background: transparent;
+        color: var(--white);
+        border: 2px solid rgba(255, 255, 255, 0.32);
+      }
+
+      .btn-main {
+        background: var(--accent);
+        color: var(--white);
+      }
+
+      .wrapper {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 20px 24px 36px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgba(47, 128, 237, 0.14);
+        border: 1px solid rgba(47, 128, 237, 0.48);
+        color: #a9d0ff;
+        font-weight: 700;
+        font-size: 0.86rem;
+        margin-bottom: 14px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.2rem);
+        line-height: 1.12;
+      }
+
+      .lead {
+        margin: 14px 0 24px;
+        color: var(--muted);
+        font-size: 1.1rem;
+        line-height: 1.55;
+        max-width: 900px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 16px;
+      }
+
+      .card {
+        background: #f8fbff;
+        color: #16355f;
+        border-radius: 20px;
+        border: 1px solid rgba(22, 58, 95, 0.14);
+        padding: 22px;
+      }
+
+      .card h2 {
+        margin: 0 0 6px;
+        color: var(--azul-escuro);
+        font-size: 1.5rem;
+      }
+
+      .card p {
+        margin: 0 0 14px;
+        color: #4f6a8b;
+      }
+
+      .steps {
+        margin: 0;
+        padding-left: 20px;
+        color: #4c6789;
+        line-height: 1.7;
+      }
+
+      form {
+        display: grid;
+        gap: 14px;
+      }
+
+      .section-title {
+        margin: 8px 0 2px;
+        font-size: 1rem;
+        font-weight: 700;
+        color: #214f84;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .field.full {
+        grid-column: 1 / -1;
+      }
+
+      .field label {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #284c73;
+      }
+
+      .field input {
+        height: 44px;
+        border-radius: 10px;
+        border: 1px solid #bfd1e4;
+        padding: 0 12px;
+        font-size: 0.98rem;
+      }
+
+      .field input:focus-visible {
+        outline: 3px solid rgba(47, 128, 237, 0.25);
+        border-color: var(--azul-claro);
+      }
+
+      .helper {
+        margin: 0;
+        font-size: 0.88rem;
+        color: #5a7393;
+      }
+
+      .senha-checklist {
+        margin: 4px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 6px;
+      }
+
+      .senha-checklist li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.87rem;
+        color: #6c7f98;
+      }
+
+      .senha-checklist li::before {
+        content: "○";
+        color: #7f92ac;
+        font-weight: 700;
+      }
+
+      .senha-checklist li.ok {
+        color: #13874b;
+        font-weight: 600;
+      }
+
+      .senha-checklist li.ok::before {
+        content: "✔";
+        color: #13874b;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 6px;
+      }
+
+      .actions .btn {
+        flex: 1;
+      }
+
+      .message {
+        margin-top: 10px;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 0.92rem;
+        display: none;
+      }
+
+      .message.show {
+        display: block;
+      }
+
+      .message.error {
+        background: #fce7eb;
+        color: #8f2037;
+        border: 1px solid #f4bfd0;
+      }
+
+      .message.success {
+        background: #e8f2ff;
+        color: #1d4e84;
+        border: 1px solid #bcd4ef;
+      }
+
+      .loading {
+        opacity: 0.74;
+        pointer-events: none;
+      }
+
+      @media (max-width: 1100px) {
+        .menu {
+          display: none;
+        }
+
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .header {
+          flex-wrap: wrap;
+        }
+
+        .header-actions {
+          width: 100%;
+        }
+
+        .header-actions .btn {
+          flex: 1;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .actions {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="site">
+      <header class="header">
+        <a class="logo" href="/">Norte <span>Soluções</span></a>
+
+        <nav class="menu" aria-label="Navegação principal">
+          <a href="/">Início</a>
+          <a href="/solucao.html">Solução</a>
+          <a href="/planos.html">Planos</a>
+          <a href="/quem-somos.html">Quem somos</a>
+        </nav>
+
+        <div class="header-actions">
+          <a class="btn btn-outline" href="/">Voltar</a>
+          <a class="btn btn-main active" href="/registro.html">Começar grátis</a>
+        </div>
+      </header>
+
+      <main class="wrapper">
+        <span class="eyebrow">Criação de conta</span>
+        <h1>Cadastre sua empresa e o primeiro usuário em um único passo</h1>
+        <p class="lead">
+          Este cadastro cria o registro da empresa e, ao mesmo tempo, o usuário administrador
+          inicial que terá acesso ao sistema para configurar a operação.
+        </p>
+
+        <section class="layout">
+          <article class="card">
+            <h2>Como funciona</h2>
+            <p>Fluxo simples para ativar a conta da sua operação.</p>
+            <ol class="steps">
+              <li>Preencha os dados da empresa.</li>
+              <li>Defina o administrador inicial.</li>
+              <li>Conclua e entre no sistema para configurar a frota.</li>
+            </ol>
+          </article>
+
+          <article class="card">
+            <h2>Registrar agora</h2>
+            <p>Os campos abaixo são enviados para o banco e validados no backend.</p>
+
+            <form id="registerForm" novalidate>
+              <div class="section-title">Dados da empresa</div>
+              <div id="companyFields" class="grid"></div>
+
+              <div class="section-title">Primeiro usuário (Administrador)</div>
+              <div id="userFields" class="grid"></div>
+
+              <p class="helper">A senha deve atender todos os critérios abaixo:</p>
+              <ul id="senhaChecklist" class="senha-checklist" aria-live="polite">
+                <li data-regra="minimo">No mínimo 8 caracteres</li>
+                <li data-regra="maiuscula">Pelo menos 1 letra maiúscula</li>
+                <li data-regra="minuscula">Pelo menos 1 letra minúscula</li>
+                <li data-regra="numero">Pelo menos 1 número</li>
+                <li data-regra="simbolo">Pelo menos 1 símbolo</li>
+              </ul>
+
+              <div class="actions">
+                <button id="submitBtn" class="btn btn-main" type="submit">Criar conta</button>
+                <a class="btn btn-outline" href="/planos.html">Ver planos</a>
+              </div>
+
+              <div id="messageBox" class="message" role="status" aria-live="polite"></div>
+            </form>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const companyFieldSchema = [
+        {
+          id: 'nomeEmpresa',
+          label: 'Nome da empresa',
+          type: 'text',
+          required: true,
+          placeholder: 'Ex: Transportadora Norte LTDA',
+          full: true,
+        },
+        {
+          id: 'razaoSocial',
+          label: 'Razão social',
+          type: 'text',
+          required: false,
+          placeholder: 'Ex: Norte Soluções Logísticas LTDA',
+          full: true,
+        },
+        {
+          id: 'cnpj',
+          label: 'CNPJ',
+          type: 'text',
+          required: false,
+          placeholder: '00.000.000/0000-00',
+        },
+        {
+          id: 'telefoneEmpresa',
+          label: 'Telefone',
+          type: 'tel',
+          required: false,
+          placeholder: '(11) 99999-9999',
+        },
+        {
+          id: 'emailEmpresa',
+          label: 'E-mail da empresa',
+          type: 'email',
+          required: true,
+          placeholder: 'contato@empresa.com',
+          full: true,
+        },
+        {
+          id: 'idEmpresa',
+          label: 'ID da Empresa (grupo)',
+          type: 'number',
+          required: true,
+          placeholder: '1',
+        },
+      ];
+
+      const userFieldSchema = [
+        {
+          id: 'nomeAdministrador',
+          label: 'Nome completo',
+          type: 'text',
+          required: true,
+          placeholder: 'Nome do responsável',
+        },
+        {
+          id: 'emailAdministrador',
+          label: 'E-mail de acesso',
+          type: 'email',
+          required: true,
+          placeholder: 'admin@empresa.com',
+        },
+        {
+          id: 'senha',
+          label: 'Senha',
+          type: 'password',
+          required: true,
+          placeholder: 'Ex: Forte@2026',
+          full: true,
+        },
+      ];
+
+      const registerForm = document.getElementById('registerForm');
+      const submitBtn = document.getElementById('submitBtn');
+      const messageBox = document.getElementById('messageBox');
+      const senhaChecklist = document.getElementById('senhaChecklist');
+
+      function avaliarSenha(senha) {
+        return {
+          minimo: senha.length >= 8,
+          maiuscula: /[A-ZÀ-Ý]/.test(senha),
+          minuscula: /[a-zà-ÿ]/.test(senha),
+          numero: /\d/.test(senha),
+          simbolo: /[^A-Za-z0-9\s]/.test(senha),
+        };
+      }
+
+      function atualizarChecklistSenha() {
+        const campoSenha = document.getElementById('senha');
+        if (!campoSenha) {
+          return {
+            minimo: false,
+            maiuscula: false,
+            minuscula: false,
+            numero: false,
+            simbolo: false,
+          };
+        }
+
+        const regras = avaliarSenha(campoSenha.value);
+        const itens = senhaChecklist.querySelectorAll('li[data-regra]');
+        itens.forEach((item) => {
+          const nomeRegra = item.getAttribute('data-regra');
+          item.classList.toggle('ok', Boolean(regras[nomeRegra]));
+        });
+        return regras;
+      }
+
+      function renderField(schemaItem) {
+        const wrapper = document.createElement('div');
+        wrapper.className = schemaItem.full ? 'field full' : 'field';
+
+        const label = document.createElement('label');
+        label.setAttribute('for', schemaItem.id);
+        label.textContent = schemaItem.label;
+
+        const input = document.createElement('input');
+        input.id = schemaItem.id;
+        input.name = schemaItem.id;
+        input.type = schemaItem.type;
+        input.placeholder = schemaItem.placeholder;
+        input.required = Boolean(schemaItem.required);
+        input.autocomplete = schemaItem.type === 'password' ? 'new-password' : 'on';
+        if (schemaItem.id === 'idEmpresa') {
+          input.min = '1';
+          input.value = '1';
+        }
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(input);
+
+        return wrapper;
+      }
+
+      function renderDynamicFields() {
+        const companyContainer = document.getElementById('companyFields');
+        const userContainer = document.getElementById('userFields');
+
+        companyFieldSchema.forEach((item) => companyContainer.appendChild(renderField(item)));
+        userFieldSchema.forEach((item) => userContainer.appendChild(renderField(item)));
+
+        const campoSenha = document.getElementById('senha');
+        if (campoSenha) {
+          campoSenha.addEventListener('input', atualizarChecklistSenha);
+        }
+        atualizarChecklistSenha();
+      }
+
+      function showMessage(type, text) {
+        messageBox.className = `message show ${type}`;
+        messageBox.textContent = text;
+      }
+
+      function setLoading(isLoading) {
+        registerForm.classList.toggle('loading', isLoading);
+        submitBtn.disabled = isLoading;
+        submitBtn.textContent = isLoading ? 'Criando conta...' : 'Criar conta';
+      }
+
+      async function submitRegistration(event) {
+        event.preventDefault();
+        messageBox.className = 'message';
+
+        const formData = new FormData(registerForm);
+        const payload = Object.fromEntries(formData.entries());
+        const regrasSenha = atualizarChecklistSenha();
+
+        if (!Object.values(regrasSenha).every(Boolean)) {
+          showMessage(
+            'error',
+            'A senha precisa atender todos os critérios: 8+ caracteres, maiúscula, minúscula, número e símbolo.',
+          );
+          return;
+        }
+
+        setLoading(true);
+
+        try {
+          const response = await fetch('/api/auth/registrar-empresa', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            const fallback = 'Não foi possível concluir o cadastro.';
+            showMessage('error', result.mensagem || result.message || fallback);
+            return;
+          }
+
+          showMessage(
+            'success',
+            'Cadastro concluido com sucesso. Empresa e usuario administrador foram criados.',
+          );
+          registerForm.reset();
+        } catch (_error) {
+          showMessage('error', 'Erro de conexão ao tentar registrar. Tente novamente em instantes.');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      renderDynamicFields();
+      registerForm.addEventListener('submit', submitRegistration);
+    </script>
+  </body>
+</html>
+
+

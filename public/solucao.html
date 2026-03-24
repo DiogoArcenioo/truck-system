@@ -1,0 +1,621 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Norte Soluções | Solução de Gestão de Frota</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-main: #0f1b48;
+        --bg-soft: #13265e;
+        --azul-escuro: #163a5f;
+        --azul-claro: #2f80ed;
+        --accent: #2f80ed;
+        --text: #f7fbff;
+        --muted: #b6c7ea;
+        --white: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Poppins", "Segoe UI", "Trebuchet MS", sans-serif;
+        background: radial-gradient(circle at 80% 0%, #1d2f77 0%, var(--bg-main) 42%, #0a1335 100%);
+        color: var(--text);
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .site {
+        min-height: 100vh;
+      }
+
+      .header {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 22px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .logo {
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: 0.2px;
+      }
+
+      .logo span {
+        color: var(--accent);
+      }
+
+      .menu {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        font-weight: 600;
+        color: #e3edff;
+      }
+
+      .menu a:hover,
+      .menu a.active {
+        color: var(--accent);
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .btn {
+        border: none;
+        border-radius: 999px;
+        padding: 12px 24px;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.2s ease, filter 0.2s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.03);
+      }
+
+      .btn-outline {
+        background: transparent;
+        color: var(--white);
+        border: 2px solid rgba(255, 255, 255, 0.32);
+      }
+
+      .btn-main {
+        background: var(--accent);
+        color: var(--white);
+      }
+
+      .hero {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 30px 24px 14px;
+        display: block;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgba(47, 128, 237, 0.14);
+        border: 1px solid rgba(47, 128, 237, 0.48);
+        color: #a9d0ff;
+        font-weight: 700;
+        font-size: 0.86rem;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4.4vw, 3.7rem);
+        line-height: 1.1;
+      }
+
+      h1 strong {
+        color: var(--accent);
+      }
+
+      .lead {
+        margin: 18px 0 26px;
+        color: var(--muted);
+        font-size: 1.22rem;
+        line-height: 1.52;
+        max-width: 760px;
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .section {
+        max-width: 1220px;
+        margin: 12px auto 0;
+        padding: 0 24px 28px;
+      }
+
+      .panel {
+        background: #f8fbff;
+        color: #17345f;
+        border: 1px solid rgba(22, 58, 95, 0.14);
+        border-radius: 20px;
+        padding: 26px;
+      }
+
+      .panel h2 {
+        margin: 0 0 6px;
+        font-size: 1.9rem;
+      }
+
+      .panel .subtitle {
+        margin: 0 0 18px;
+        color: #49668b;
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+
+      .kpi {
+        background: #edf4ff;
+        border: 1px solid #d3e1f1;
+        border-radius: 12px;
+        padding: 14px;
+      }
+
+      .kpi b {
+        display: block;
+        color: #1f4f86;
+        font-size: 1.45rem;
+      }
+
+      .kpi span {
+        color: #4b6688;
+        font-size: 0.93rem;
+      }
+
+      .benefits {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+
+      .benefit {
+        background: #ffffff;
+        border: 1px solid #d5e1ef;
+        border-radius: 12px;
+        padding: 14px;
+      }
+
+      .benefit h4 {
+        margin: 0 0 6px;
+        color: var(--azul-escuro);
+      }
+
+      .benefit p {
+        margin: 0;
+        color: #4d6889;
+        line-height: 1.5;
+      }
+
+      .cta-block {
+        margin-top: 18px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .table-wrap {
+        margin-top: 22px;
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 680px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 11px 10px;
+        border-bottom: 1px solid #d9e5f3;
+      }
+
+      th {
+        color: #214d81;
+        font-size: 0.93rem;
+      }
+
+      td {
+        color: #35587e;
+        font-size: 0.94rem;
+      }
+
+      .tag-up {
+        color: #0d5ba8;
+        font-weight: 700;
+      }
+
+      .tag-down {
+        color: #6b7e97;
+        font-weight: 700;
+      }
+
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(5, 15, 37, 0.68);
+        backdrop-filter: blur(2px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 50;
+      }
+
+      .modal-overlay.show {
+        display: flex;
+      }
+
+      .modal {
+        width: min(520px, 100%);
+        background: #f8fbff;
+        color: #183560;
+        border-radius: 20px;
+        border: 1px solid rgba(22, 58, 95, 0.16);
+        box-shadow: 0 18px 46px rgba(3, 14, 35, 0.42);
+        padding: 24px;
+      }
+
+      .modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .modal-title {
+        margin: 0;
+        color: var(--azul-escuro);
+        font-size: 1.6rem;
+      }
+
+      .modal-subtitle {
+        margin: 4px 0 0;
+        color: #486488;
+      }
+
+      .modal-close {
+        width: 38px;
+        height: 38px;
+        border-radius: 999px;
+        border: 1px solid #c3d2e4;
+        background: #edf4ff;
+        color: #234d80;
+        font-size: 1.05rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+
+      .field label {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #284c73;
+      }
+
+      .field input {
+        height: 46px;
+        border-radius: 10px;
+        border: 1px solid #bfd1e4;
+        padding: 0 12px;
+        font-size: 1rem;
+      }
+
+      .field input:focus-visible {
+        outline: 3px solid rgba(47, 128, 237, 0.25);
+        border-color: var(--azul-claro);
+      }
+
+      .login-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 6px;
+      }
+
+      .btn-login {
+        background: var(--azul-claro);
+        color: var(--white);
+        flex: 1;
+      }
+
+      .btn-ghost {
+        background: #edf4ff;
+        color: #24578f;
+        flex: 1;
+      }
+
+      body.modal-open {
+        overflow: hidden;
+      }
+
+      @media (max-width: 1100px) {
+        .menu {
+          display: none;
+        }
+
+        .kpis {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 760px) {
+        .header {
+          flex-wrap: wrap;
+        }
+
+        .header-actions {
+          width: 100%;
+        }
+
+        .header-actions .btn {
+          flex: 1;
+        }
+
+        .lead {
+          font-size: 1.05rem;
+        }
+
+        .benefits {
+          grid-template-columns: 1fr;
+        }
+
+        .kpis {
+          grid-template-columns: 1fr;
+        }
+
+        .login-actions {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="site">
+      <header class="header">
+        <a class="logo" href="/">Norte <span>Soluções</span></a>
+
+        <nav class="menu" aria-label="Navegação principal">
+          <a href="/">Início</a>
+          <a class="active" href="/solucao.html">Solução</a>
+          <a href="/planos.html">Planos</a>
+          <a href="/quem-somos.html">Quem somos</a>
+        </nav>
+
+        <div class="header-actions">
+          <a class="btn btn-outline" href="#" data-open-login>Entrar</a>
+          <a class="btn btn-main" href="/registro.html">Começar grátis</a>
+        </div>
+      </header>
+
+      <main class="hero">
+        <section>
+          <span class="eyebrow">Solução para gestão de frota com foco em resultado</span>
+          <h1>
+            Transforme operação em <strong>indicadores claros</strong> para reduzir custo e
+            aumentar <strong>lucro por viagem</strong>
+          </h1>
+          <p class="lead">
+            Com a Norte Soluções, você acompanha média de consumo, custo por quilômetro,
+            margem por rota e desempenho de motoristas em tempo real. Menos decisão no chute,
+            mais gestão com números.
+          </p>
+
+          <div class="hero-actions">
+            <a class="btn btn-main" href="/planos.html">Quero uma demonstração</a>
+            <a class="btn btn-outline" href="#indicadores">Ver indicadores</a>
+          </div>
+        </section>
+
+      </main>
+
+      <section class="section" id="indicadores">
+        <div class="panel">
+          <h2>Indicadores que movem a frota</h2>
+          <p class="subtitle">
+            O sistema organiza os dados operacionais para você comparar tendência, custo e retorno
+            sem planilhas manuais.
+          </p>
+
+          <div class="kpis">
+            <article class="kpi">
+              <b>R$ 3,42</b>
+              <span>Custo médio por km</span>
+            </article>
+            <article class="kpi">
+              <b>7,8 km/L</b>
+              <span>Média de consumo da frota</span>
+            </article>
+            <article class="kpi">
+              <b>18,6%</b>
+              <span>Margem média por viagem</span>
+            </article>
+            <article class="kpi">
+              <b>91%</b>
+              <span>Disponibilidade operacional</span>
+            </article>
+          </div>
+
+          <div class="benefits">
+            <article class="benefit">
+              <h4>Gestão por rentabilidade</h4>
+              <p>Veja quais viagens realmente dão lucro e ajuste rota, preço e alocação de veículo.</p>
+            </article>
+            <article class="benefit">
+              <h4>Controle de custo em tempo real</h4>
+              <p>Monitore combustível, manutenção e pneus para evitar surpresas no fechamento.</p>
+            </article>
+            <article class="benefit">
+              <h4>Média por motorista e veículo</h4>
+              <p>Compare performance entre unidades e aja rápido para corrigir desvios de operação.</p>
+            </article>
+            <article class="benefit">
+              <h4>Previsão para crescer com segurança</h4>
+              <p>Use histórico e tendência para decidir expansão da frota com menor risco financeiro.</p>
+            </article>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Indicador</th>
+                  <th>Últimos 30 dias</th>
+                  <th>Mês anterior</th>
+                  <th>Variação</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Custo por km</td>
+                  <td>R$ 3,42</td>
+                  <td>R$ 3,71</td>
+                  <td class="tag-up">-7,8%</td>
+                </tr>
+                <tr>
+                  <td>Lucro por viagem</td>
+                  <td>R$ 1.980</td>
+                  <td>R$ 1.640</td>
+                  <td class="tag-up">+20,7%</td>
+                </tr>
+                <tr>
+                  <td>Consumo médio</td>
+                  <td>7,8 km/L</td>
+                  <td>7,1 km/L</td>
+                  <td class="tag-up">+9,8%</td>
+                </tr>
+                <tr>
+                  <td>Horas paradas não planejadas</td>
+                  <td>26 h</td>
+                  <td>34 h</td>
+                  <td class="tag-down">-23,5%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="cta-block">
+            <a class="btn btn-main" href="/planos.html">Quero aplicar isso na minha frota</a>
+            <a class="btn btn-outline" href="#" data-open-login>Já sou cliente, fazer login</a>
+          </div>
+        </div>
+      </section>
+
+      <div id="loginModal" class="modal-overlay" aria-hidden="true">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+          <header class="modal-header">
+            <div>
+              <h2 id="login-modal-title" class="modal-title">Login do cliente</h2>
+              <p class="modal-subtitle">Já tem acesso? Entre para abrir o sistema.</p>
+            </div>
+            <button type="button" class="modal-close" data-close-login aria-label="Fechar login">x</button>
+          </header>
+
+          <form action="/sistema" method="get">
+            <div class="field">
+              <label for="email">E-mail</label>
+              <input id="email" type="email" name="email" placeholder="seuemail@empresa.com" />
+            </div>
+
+            <div class="field">
+              <label for="senha">Senha</label>
+              <input id="senha" type="password" name="senha" placeholder="Digite sua senha" />
+            </div>
+
+            <div class="login-actions">
+              <button class="btn btn-login" type="submit">Entrar no sistema</button>
+              <button class="btn btn-ghost" type="button">Solicitar demonstração</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      const modal = document.getElementById("loginModal");
+      const openButtons = document.querySelectorAll("[data-open-login]");
+      const closeButtons = document.querySelectorAll("[data-close-login]");
+
+      const openModal = () => {
+        modal.classList.add("show");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+      };
+
+      const closeModal = () => {
+        modal.classList.remove("show");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("modal-open");
+      };
+
+      openButtons.forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          openModal();
+        });
+      });
+
+      closeButtons.forEach((button) => {
+        button.addEventListener("click", closeModal);
+      });
+
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          closeModal();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && modal.classList.contains("show")) {
+          closeModal();
+        }
+      });
+    </script>
+  </body>
+</html>
+
