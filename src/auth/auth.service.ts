@@ -44,7 +44,7 @@ export class ServicoAuth {
     try {
       await this.garantirEstruturaDoBanco();
 
-      const resultado = await this.servicoBanco.withTransaction(async (clienteDb) => {
+      const resultado = await this.servicoBanco.withSignupTransaction(async (clienteDb) => {
         // Calcula o proximo codigo no formato CLI-0001 com base nos codigos existentes.
         const codigoResult = await clienteDb.query<{ proximo: number }>(
           `
@@ -120,6 +120,12 @@ export class ServicoAuth {
         );
       }
 
+      if (erroPg.message?.includes('Signup database env vars are missing')) {
+        throw new BadRequestException(
+          'Configuracao de cadastro ausente. Defina DB_SIGNUP_HOST, DB_SIGNUP_PORT, DB_SIGNUP_NAME, DB_SIGNUP_USER e DB_SIGNUP_PASSWORD.',
+        );
+      }
+
       // Erros de conectividade com banco (host/porta indisponiveis).
       if (
         /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|timeout/i.test(
@@ -134,7 +140,7 @@ export class ServicoAuth {
       // 28P01 = senha/usuario invalidos no Postgres.
       if (erroPg.code === '28P01') {
         throw new BadRequestException(
-          'Falha de autenticacao no banco. Verifique DB_USER e DB_PASSWORD.',
+          'Falha de autenticacao no banco. Verifique as credenciais DB_SIGNUP_USER/DB_SIGNUP_PASSWORD (cadastro) e DB_USER/DB_PASSWORD (fluxo normal).',
         );
       }
 
@@ -241,10 +247,10 @@ export class ServicoAuth {
     }
 
     try {
-      await this.servicoBanco.query('CREATE SCHEMA IF NOT EXISTS app;');
+      await this.servicoBanco.queryWithSignup('CREATE SCHEMA IF NOT EXISTS app;');
 
       // Estrutura da tabela app.clientes conforme informado.
-      await this.servicoBanco.query(`
+      await this.servicoBanco.queryWithSignup(`
         CREATE TABLE IF NOT EXISTS app.clientes (
           id_cliente BIGSERIAL PRIMARY KEY,
           codigo TEXT,
@@ -257,12 +263,12 @@ export class ServicoAuth {
         );
       `);
 
-      await this.servicoBanco.query(
+      await this.servicoBanco.queryWithSignup(
         'CREATE UNIQUE INDEX IF NOT EXISTS uq_app_clientes_codigo ON app.clientes (codigo);',
       );
 
       // Tabela de usuarios com a estrutura informada para app.usuarios.
-      await this.servicoBanco.query(`
+      await this.servicoBanco.queryWithSignup(`
         CREATE TABLE IF NOT EXISTS app.usuarios (
           id_usuario BIGSERIAL PRIMARY KEY,
           id_empresa BIGINT NOT NULL,
@@ -278,11 +284,11 @@ export class ServicoAuth {
         );
       `);
 
-      await this.servicoBanco.query(
+      await this.servicoBanco.queryWithSignup(
         'CREATE UNIQUE INDEX IF NOT EXISTS uq_app_usuarios_email_lower ON app.usuarios (LOWER(email));',
       );
 
-      await this.servicoBanco.query(
+      await this.servicoBanco.queryWithSignup(
         'CREATE INDEX IF NOT EXISTS idx_app_usuarios_empresa_id ON app.usuarios (id_empresa);',
       );
     } catch (erro) {
