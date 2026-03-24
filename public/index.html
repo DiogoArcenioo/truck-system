@@ -321,8 +321,29 @@
       }
 
       @media (max-width: 1100px) {
+        .header {
+          flex-wrap: wrap;
+          align-items: flex-start;
+        }
+
         .menu {
-          display: none;
+          display: flex;
+          order: 3;
+          width: 100%;
+          overflow-x: auto;
+          white-space: nowrap;
+          gap: 16px;
+          padding-top: 10px;
+          scrollbar-width: thin;
+        }
+
+        .menu::-webkit-scrollbar {
+          height: 6px;
+        }
+
+        .menu::-webkit-scrollbar-thumb {
+          background: rgba(225, 236, 255, 0.38);
+          border-radius: 999px;
         }
 
         .hero {
@@ -331,16 +352,23 @@
       }
 
       @media (max-width: 700px) {
-        .header {
-          flex-wrap: wrap;
+        .logo {
+          font-size: 1.7rem;
+        }
+
+        .menu {
+          font-size: 0.95rem;
         }
 
         .header-actions {
           width: 100%;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .header-actions .btn {
-          flex: 1;
+          text-align: center;
+          padding: 11px 16px;
         }
 
         .lead {
@@ -360,7 +388,7 @@
   <body>
     <div class="site">
       <header class="header">
-        <a class="logo" href="#">Norte <span>Soluções</span></a>
+        <a class="logo" href="/">Norte <span>Soluções</span></a>
 
         <nav class="menu" aria-label="Navegação principal">
           <a class="active" href="/">Início</a>
