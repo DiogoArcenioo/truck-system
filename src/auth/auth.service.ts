@@ -145,6 +145,26 @@ export class ServicoAuth {
         );
       }
 
+      // 42P01 = tabela/schema nao encontrado.
+      if (erroPg.code === '42P01') {
+        throw new BadRequestException(
+          'Estrutura do banco nao encontrada (schema/tabela). Verifique se app.clientes e app.usuarios existem.',
+        );
+      }
+
+      // 42501 = sem permissao (inclui bloqueio por RLS).
+      if (erroPg.code === '42501') {
+        if (/row-level security/i.test(mensagemErro)) {
+          throw new BadRequestException(
+            'Cadastro bloqueado por politica de seguranca (RLS). Ajuste a policy para permitir INSERT do usuario atual.',
+          );
+        }
+
+        throw new BadRequestException(
+          'Usuario do banco sem permissao para executar o cadastro. Verifique GRANTs no schema app e nas tabelas.',
+        );
+      }
+
       // 23505 = violacao de chave unica (email/codigo/cnpj etc).
       if (erroPg.code === '23505') {
         throw new BadRequestException(
@@ -220,50 +240,66 @@ export class ServicoAuth {
       return;
     }
 
-    await this.servicoBanco.query('CREATE SCHEMA IF NOT EXISTS app;');
+    try {
+      await this.servicoBanco.query('CREATE SCHEMA IF NOT EXISTS app;');
 
-    // Estrutura da tabela app.clientes conforme informado.
-    await this.servicoBanco.query(`
-      CREATE TABLE IF NOT EXISTS app.clientes (
-        id_cliente BIGSERIAL PRIMARY KEY,
-        codigo TEXT,
-        nome TEXT NOT NULL,
-        ativo BOOLEAN NOT NULL DEFAULT TRUE,
-        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        usuario_atualizacao TEXT,
-        id_empresa BIGINT NOT NULL,
-        atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      // Estrutura da tabela app.clientes conforme informado.
+      await this.servicoBanco.query(`
+        CREATE TABLE IF NOT EXISTS app.clientes (
+          id_cliente BIGSERIAL PRIMARY KEY,
+          codigo TEXT,
+          nome TEXT NOT NULL,
+          ativo BOOLEAN NOT NULL DEFAULT TRUE,
+          criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          usuario_atualizacao TEXT,
+          id_empresa BIGINT NOT NULL,
+          atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
+
+      await this.servicoBanco.query(
+        'CREATE UNIQUE INDEX IF NOT EXISTS uq_app_clientes_codigo ON app.clientes (codigo);',
       );
-    `);
 
-    await this.servicoBanco.query(
-      'CREATE UNIQUE INDEX IF NOT EXISTS uq_app_clientes_codigo ON app.clientes (codigo);',
-    );
+      // Tabela de usuarios com a estrutura informada para app.usuarios.
+      await this.servicoBanco.query(`
+        CREATE TABLE IF NOT EXISTS app.usuarios (
+          id_usuario BIGSERIAL PRIMARY KEY,
+          id_empresa BIGINT NOT NULL,
+          nome VARCHAR(150) NOT NULL,
+          email VARCHAR(150) NOT NULL,
+          senha_hash TEXT NOT NULL,
+          perfil VARCHAR(20) NOT NULL DEFAULT 'ADM',
+          ativo BOOLEAN NOT NULL DEFAULT TRUE,
+          ultimo_login_em TIMESTAMPTZ,
+          criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          usuario_atualizacao TEXT,
+          atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
 
-    // Tabela de usuarios com a estrutura informada para app.usuarios.
-    await this.servicoBanco.query(`
-      CREATE TABLE IF NOT EXISTS app.usuarios (
-        id_usuario BIGSERIAL PRIMARY KEY,
-        id_empresa BIGINT NOT NULL,
-        nome VARCHAR(150) NOT NULL,
-        email VARCHAR(150) NOT NULL,
-        senha_hash TEXT NOT NULL,
-        perfil VARCHAR(20) NOT NULL DEFAULT 'ADM',
-        ativo BOOLEAN NOT NULL DEFAULT TRUE,
-        ultimo_login_em TIMESTAMPTZ,
-        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        usuario_atualizacao TEXT,
-        atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      await this.servicoBanco.query(
+        'CREATE UNIQUE INDEX IF NOT EXISTS uq_app_usuarios_email_lower ON app.usuarios (LOWER(email));',
       );
-    `);
 
-    await this.servicoBanco.query(
-      'CREATE UNIQUE INDEX IF NOT EXISTS uq_app_usuarios_email_lower ON app.usuarios (LOWER(email));',
-    );
+      await this.servicoBanco.query(
+        'CREATE INDEX IF NOT EXISTS idx_app_usuarios_empresa_id ON app.usuarios (id_empresa);',
+      );
+    } catch (erro) {
+      const erroPg = erro as { code?: string; message?: string };
 
-    await this.servicoBanco.query(
-      'CREATE INDEX IF NOT EXISTS idx_app_usuarios_empresa_id ON app.usuarios (id_empresa);',
-    );
+      // Em producao, usuario de app pode nao ter permissao de DDL.
+      // Nesse caso seguimos e tentamos o fluxo de INSERT em tabelas ja existentes.
+      if (erroPg.code === '42501') {
+        this.logger.warn(
+          `Sem permissao para DDL no banco (code=42501). Pulando auto-criacao de estrutura. message=${erroPg.message ?? 'N/A'}`,
+        );
+        this.esquemaPronto = true;
+        return;
+      }
+
+      throw erro;
+    }
 
     this.esquemaPronto = true;
   }
