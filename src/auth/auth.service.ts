@@ -1,4 +1,4 @@
-﻿import { BadRequestException, Injectable } from '@nestjs/common';
+﻿import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { randomBytes, scryptSync } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 
@@ -33,6 +33,7 @@ interface LinhaUsuarioInserido {
 export class ServicoAuth {
   // Evita recriar tabelas e indices a cada requisicao.
   private esquemaPronto = false;
+  private readonly logger = new Logger(ServicoAuth.name);
 
   constructor(private readonly servicoBanco: DatabaseService) {}
 
@@ -107,10 +108,40 @@ export class ServicoAuth {
       };
     } catch (erro) {
       const erroPg = erro as { code?: string; message?: string };
+      const mensagemErro = erroPg.message ?? 'Erro desconhecido';
+
+      this.logger.error(
+        `Falha ao registrar empresa. code=${erroPg.code ?? 'N/A'} message=${mensagemErro}`,
+      );
 
       if (erroPg.message?.includes('Database env vars are missing')) {
         throw new BadRequestException(
           'Configuracao de banco ausente. Defina DB_HOST, DB_PORT, DB_NAME, DB_USER e DB_PASSWORD no arquivo .env.',
+        );
+      }
+
+      // Erros de conectividade com banco (host/porta indisponiveis).
+      if (
+        /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|timeout/i.test(
+          mensagemErro,
+        )
+      ) {
+        throw new BadRequestException(
+          'Nao foi possivel conectar ao banco de dados. Verifique DB_HOST, DB_PORT e se o Postgres esta acessivel no servidor.',
+        );
+      }
+
+      // 28P01 = senha/usuario invalidos no Postgres.
+      if (erroPg.code === '28P01') {
+        throw new BadRequestException(
+          'Falha de autenticacao no banco. Verifique DB_USER e DB_PASSWORD.',
+        );
+      }
+
+      // 3D000 = banco informado em DB_NAME nao existe.
+      if (erroPg.code === '3D000') {
+        throw new BadRequestException(
+          'Banco informado em DB_NAME nao existe no Postgres.',
         );
       }
 
