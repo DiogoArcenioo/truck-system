@@ -109,20 +109,22 @@ export class AuthService {
   }
 
   private normalizarEntrada(dados: CreateEmpresaDto): CreateEmpresaDto {
+    const whatsappPrincipal = dados.whatsappPrincipal ?? dados.telefonePrincipal;
+
     return {
       ...dados,
-      nomeFantasia: dados.nomeFantasia.trim(),
-      razaoSocial: dados.razaoSocial.trim(),
-      cnpj: dados.cnpj.replace(/\D/g, ''),
-      emailPrincipal: dados.emailPrincipal.trim().toLowerCase(),
-      telefonePrincipal: dados.telefonePrincipal.trim(),
-      whatsappPrincipal: (
-        dados.whatsappPrincipal ?? dados.telefonePrincipal
-      ).trim(),
+      nomeFantasia: this.normalizarTextoMaiusculo(dados.nomeFantasia),
+      razaoSocial: this.normalizarTextoMaiusculo(dados.razaoSocial),
+      cnpj: this.formatarCnpj(dados.cnpj),
+      emailPrincipal: this.normalizarTextoMaiusculo(dados.emailPrincipal),
+      telefonePrincipal: this.normalizarTextoMaiusculo(dados.telefonePrincipal),
+      whatsappPrincipal: this.normalizarTextoMaiusculo(whatsappPrincipal),
       ativo: dados.ativo ?? true,
-      status: (dados.status ?? 'ativo').trim().toLowerCase(),
-      plano: (dados.plano ?? 'basico').trim().toLowerCase(),
-      usuarioAtualizacao: (dados.usuarioAtualizacao ?? 'SISTEMA').trim(),
+      status: this.normalizarTextoMaiusculo(dados.status ?? 'ATIVO'),
+      plano: this.normalizarTextoMaiusculo(dados.plano ?? 'BASICO'),
+      usuarioAtualizacao: this.normalizarTextoMaiusculo(
+        dados.usuarioAtualizacao ?? 'SISTEMA',
+      ),
     };
   }
 
@@ -316,5 +318,22 @@ export class AuthService {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .replace(/-+/g, '-');
+  }
+
+  private normalizarTextoMaiusculo(valor: string): string {
+    return valor.trim().toUpperCase();
+  }
+
+  private formatarCnpj(cnpj: string): string {
+    const apenasNumeros = cnpj.replace(/\D/g, '');
+
+    if (apenasNumeros.length !== 14) {
+      throw new BadRequestException('CNPJ deve conter 14 digitos.');
+    }
+
+    return apenasNumeros.replace(
+      /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+      '$1.$2.$3/$4-$5',
+    );
   }
 }
