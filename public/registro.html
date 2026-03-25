@@ -592,7 +592,14 @@
         messageBox.className = 'message';
 
         const formData = new FormData(registerForm);
-        const payload = Object.fromEntries(formData.entries());
+        const formPayload = Object.fromEntries(formData.entries());
+        const payload = {
+          nomeEmpresa: String(formPayload.nomeEmpresa ?? ''),
+          razaoSocial: String(formPayload.razaoSocial ?? ''),
+          cnpj: String(formPayload.cnpj ?? ''),
+          emailEmpresa: String(formPayload.emailEmpresa ?? ''),
+          telefoneEmpresa: String(formPayload.telefoneEmpresa ?? ''),
+        };
         const regrasSenha = atualizarChecklistSenha();
 
         if (!Object.values(regrasSenha).every(Boolean)) {
@@ -624,7 +631,7 @@
 
           showMessage(
             'success',
-            'Cadastro concluido com sucesso. Empresa e usuario administrador foram criados.',
+            'Cadastro concluido com sucesso. Empresa criada.',
           );
           registerForm.reset();
         } catch (_error) {

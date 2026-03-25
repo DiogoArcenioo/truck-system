@@ -1,13 +1,11 @@
 import {
   IsBoolean,
   IsEmail,
-  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   Length,
   MaxLength,
-  Min,
 } from 'class-validator';
 
 export class CreateEmpresaDto {
@@ -52,24 +50,4 @@ export class CreateEmpresaDto {
   @IsOptional()
   @IsString()
   usuarioAtualizacao?: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  idEmpresa?: number;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(150)
-  nomeAdministrador?: string;
-
-  @IsOptional()
-  @IsEmail()
-  @MaxLength(150)
-  emailAdministrador?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  senha?: string;
 }
