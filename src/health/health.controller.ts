@@ -1,9 +1,9 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
+import { DataSource } from 'typeorm';
 
 @Controller()
 export class HealthController {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(private readonly dataSource: DataSource) {}
 
   @Get('health')
   health() {
@@ -17,7 +17,7 @@ export class HealthController {
   @Get('health/db')
   async healthDb() {
     try {
-      await this.databaseService.checkConnection();
+      await this.dataSource.query('SELECT 1');
       return {
         status: 'ok',
         database: 'connected',
@@ -26,29 +26,6 @@ export class HealthController {
       throw new ServiceUnavailableException({
         status: 'error',
         database: 'disconnected',
-        message:
-          error instanceof Error ? error.message : 'Unknown database error',
-      });
-    }
-  }
-
-  @Get('health/db-signup')
-  async healthDbSignup() {
-    try {
-      await this.databaseService.checkSignupConnection();
-      const currentUser = await this.databaseService.getSignupCurrentUser();
-
-      return {
-        status: 'ok',
-        database: 'connected',
-        mode: 'signup',
-        currentUser,
-      };
-    } catch (error) {
-      throw new ServiceUnavailableException({
-        status: 'error',
-        database: 'disconnected',
-        mode: 'signup',
         message:
           error instanceof Error ? error.message : 'Unknown database error',
       });

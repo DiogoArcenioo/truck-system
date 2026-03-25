@@ -1,12 +1,12 @@
-﻿import { Module } from '@nestjs/common';
-import { DatabaseModule } from '../database/database.module';
-import { ControladorAuth } from './auth.controller';
-import { ServicoAuth } from './auth.service';
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { EmpresaEntity } from './entities/empresa.entity';
 
-// Modulo de autenticacao e registro de novas contas.
 @Module({
-  imports: [DatabaseModule],
-  controllers: [ControladorAuth],
-  providers: [ServicoAuth],
+  imports: [TypeOrmModule.forFeature([EmpresaEntity])],
+  controllers: [AuthController],
+  providers: [AuthService],
 })
-export class ModuloAuth {}
+export class AuthModule {}

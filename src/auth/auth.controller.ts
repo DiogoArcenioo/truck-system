@@ -1,15 +1,13 @@
-﻿import { Body, Controller, Post } from '@nestjs/common';
-import { ServicoAuth } from './auth.service';
-import type { DadosCadastroEmpresa } from './auth.service';
+import { Body, Controller, Post } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { CreateEmpresaDto } from './dto/create-empresa.dto';
 
-// Controlador responsavel pelos endpoints de autenticacao/cadastro.
 @Controller('api/auth')
-export class ControladorAuth {
-  constructor(private readonly servicoAuth: ServicoAuth) {}
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
 
-  // Endpoint que recebe os dados da empresa e do primeiro usuario.
   @Post('registrar-empresa')
-  async registrarEmpresa(@Body() dados: DadosCadastroEmpresa) {
-    return this.servicoAuth.registrarEmpresa(dados);
+  async registrarEmpresa(@Body() dados: CreateEmpresaDto) {
+    return this.authService.registrarEmpresa(dados);
   }
 }
