@@ -1,4 +1,5 @@
-﻿import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomBytes, scryptSync } from 'crypto';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
@@ -34,14 +35,16 @@ type NomeTabelaCliente = 'cliente' | 'clientes';
 
 @Injectable()
 export class ServicoAuth {
-  private static readonly USUARIO_ADMIN_CADASTRO = 'kodigo';
   private static readonly ID_EMPRESA_RLS_PADRAO = 1;
   // Evita recriar tabelas e indices a cada requisicao.
   private esquemaPronto = false;
   private tabelaClienteResolvida: NomeTabelaCliente | null = null;
   private readonly logger = new Logger(ServicoAuth.name);
 
-  constructor(private readonly servicoBanco: DatabaseService) {}
+  constructor(
+    private readonly servicoBanco: DatabaseService,
+    private readonly configService: ConfigService,
+  ) {}
 
   // Fluxo principal: valida dados, garante schema e salva cliente+usuario em transacao unica.
   async registrarEmpresa(dadosRecebidos: DadosCadastroEmpresa) {
@@ -50,9 +53,9 @@ export class ServicoAuth {
     try {
       await this.garantirEstruturaDoBanco();
 
-      const resultado = await this.servicoBanco.withSignupTransaction(
+      const resultado = await this.servicoBanco.withTransaction(
         async (clienteDb) => {
-          const idEmpresaRls = this.definirIdEmpresaParaRls(dados.idEmpresa);
+          const idEmpresaRls = ServicoAuth.ID_EMPRESA_RLS_PADRAO;
           await this.configurarContextoRls(clienteDb, idEmpresaRls);
           const tabelaCliente = await this.resolverNomeTabelaCliente(clienteDb);
           const tabelaClienteSql = `app.${tabelaCliente}`;
@@ -85,7 +88,7 @@ export class ServicoAuth {
             [
               codigoCliente,
               dados.nomeEmpresa,
-              ServicoAuth.USUARIO_ADMIN_CADASTRO,
+              this.obterUsuarioAtualizacaoCadastro(),
               idEmpresaRls,
             ],
           );
@@ -104,7 +107,7 @@ export class ServicoAuth {
               dados.nomeAdministrador,
               dados.emailAdministrador,
               this.gerarHashDaSenha(dados.senha),
-              ServicoAuth.USUARIO_ADMIN_CADASTRO,
+              this.obterUsuarioAtualizacaoCadastro(),
             ],
           );
 
@@ -137,12 +140,6 @@ export class ServicoAuth {
         );
       }
 
-      if (erroPg.message?.includes('Signup database env vars are missing')) {
-        throw new BadRequestException(
-          'Configuracao de cadastro ausente. Defina DB_SIGNUP_HOST, DB_SIGNUP_PORT, DB_SIGNUP_NAME, DB_SIGNUP_USER e DB_SIGNUP_PASSWORD.',
-        );
-      }
-
       // Erros de conectividade com banco (host/porta indisponiveis).
       if (
         /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|timeout/i.test(mensagemErro)
@@ -155,7 +152,7 @@ export class ServicoAuth {
       // 28P01 = senha/usuario invalidos no Postgres.
       if (erroPg.code === '28P01') {
         throw new BadRequestException(
-          'Falha de autenticacao no banco. Verifique as credenciais DB_SIGNUP_USER/DB_SIGNUP_PASSWORD (cadastro) e DB_USER/DB_PASSWORD (fluxo normal).',
+          'Falha de autenticacao no banco. Verifique DB_USER/DB_PASSWORD do backend.',
         );
       }
 
@@ -177,12 +174,12 @@ export class ServicoAuth {
       if (erroPg.code === '42501') {
         if (/row-level security/i.test(mensagemErro)) {
           throw new BadRequestException(
-            `Cadastro bloqueado por RLS. Execute o cadastro com o usuario ${ServicoAuth.USUARIO_ADMIN_CADASTRO} e desabilite RLS em app.cliente/app.clientes e app.usuarios.`,
+            'Cadastro bloqueado por RLS. Neste endpoint o sistema usa id_empresa=1 por padrao; ajuste a policy para permitir esse contexto.',
           );
         }
 
         throw new BadRequestException(
-          `Usuario do banco sem permissao para executar o cadastro. Garanta DB_SIGNUP_USER=${ServicoAuth.USUARIO_ADMIN_CADASTRO} com GRANTs no schema app e nas tabelas.`,
+          'Usuario do banco sem permissao para executar o cadastro. Verifique GRANTs do DB_USER no schema app e nas tabelas.',
         );
       }
 
@@ -259,14 +256,14 @@ export class ServicoAuth {
     };
   }
 
-  // Cria schema/tabelas necessarias para cadastro e garante execucao com kodigo sem RLS.
+  // Cria schema/tabelas necessarias para cadastro usando o usuario padrao do backend (RLS).
   private async garantirEstruturaDoBanco(): Promise<void> {
     if (this.esquemaPronto) {
       return;
     }
 
     try {
-      await this.servicoBanco.queryWithSignup(
+      await this.servicoBanco.query(
         'CREATE SCHEMA IF NOT EXISTS app;',
       );
       const tabelaCliente = await this.resolverNomeTabelaCliente();
@@ -277,7 +274,7 @@ export class ServicoAuth {
           : 'uq_app_clientes_codigo';
 
       // Estrutura da tabela de cliente (app.cliente preferencial, app.clientes legado).
-      await this.servicoBanco.queryWithSignup(`
+      await this.servicoBanco.query(`
         CREATE TABLE IF NOT EXISTS ${tabelaClienteSql} (
           id_cliente BIGSERIAL PRIMARY KEY,
           codigo TEXT,
@@ -290,12 +287,12 @@ export class ServicoAuth {
         );
       `);
 
-      await this.servicoBanco.queryWithSignup(
+      await this.servicoBanco.query(
         `CREATE UNIQUE INDEX IF NOT EXISTS ${nomeIndiceCodigo} ON ${tabelaClienteSql} (codigo);`,
       );
 
       // Tabela de usuarios com a estrutura informada para app.usuarios.
-      await this.servicoBanco.queryWithSignup(`
+      await this.servicoBanco.query(`
         CREATE TABLE IF NOT EXISTS app.usuarios (
           id_usuario BIGSERIAL PRIMARY KEY,
           id_empresa BIGINT NOT NULL,
@@ -311,17 +308,16 @@ export class ServicoAuth {
         );
       `);
 
-      await this.servicoBanco.queryWithSignup(
+      await this.servicoBanco.query(
         'CREATE UNIQUE INDEX IF NOT EXISTS uq_app_usuarios_email_lower ON app.usuarios (LOWER(email));',
       );
 
-      await this.servicoBanco.queryWithSignup(
+      await this.servicoBanco.query(
         'CREATE INDEX IF NOT EXISTS idx_app_usuarios_empresa_id ON app.usuarios (id_empresa);',
       );
 
       await this.desativarRlsETirarForce(tabelaClienteSql);
       await this.desativarRlsETirarForce('app.usuarios');
-      await this.garantirPermissoesDoUsuarioKodigo(tabelaClienteSql);
     } catch (erro) {
       const erroPg = erro as { code?: string; message?: string };
 
@@ -386,7 +382,7 @@ export class ServicoAuth {
           possui_cliente: boolean;
           possui_clientes: boolean;
         }>(query)
-      : await this.servicoBanco.queryWithSignup<{
+      : await this.servicoBanco.query<{
           possui_cliente: boolean;
           possui_clientes: boolean;
         }>(query);
@@ -409,26 +405,17 @@ export class ServicoAuth {
   }
 
   private async desativarRlsETirarForce(tabelaSql: string): Promise<void> {
-    await this.servicoBanco.queryWithSignup(
+    await this.servicoBanco.query(
       `ALTER TABLE ${tabelaSql} DISABLE ROW LEVEL SECURITY;`,
     );
-    await this.servicoBanco.queryWithSignup(
+    await this.servicoBanco.query(
       `ALTER TABLE ${tabelaSql} NO FORCE ROW LEVEL SECURITY;`,
     );
   }
 
-  private async garantirPermissoesDoUsuarioKodigo(
-    tabelaClienteSql: string,
-  ): Promise<void> {
-    await this.servicoBanco.queryWithSignup(
-      `GRANT USAGE ON SCHEMA app TO ${ServicoAuth.USUARIO_ADMIN_CADASTRO};`,
-    );
-    await this.servicoBanco.queryWithSignup(
-      `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${tabelaClienteSql}, app.usuarios TO ${ServicoAuth.USUARIO_ADMIN_CADASTRO};`,
-    );
-    await this.servicoBanco.queryWithSignup(
-      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO ${ServicoAuth.USUARIO_ADMIN_CADASTRO};`,
-    );
+  private obterUsuarioAtualizacaoCadastro(): string {
+    const usuario = this.configService.get<string>('DB_USER')?.trim();
+    return usuario && usuario.length > 0 ? usuario : 'SISTEMA';
   }
 
   // Padroniza e-mail para armazenamento em caixa alta.
@@ -456,3 +443,5 @@ export class ServicoAuth {
     return `scrypt$N=16384,r=8,p=1$${salt.toString('base64')}$${hash.toString('base64')}`;
   }
 }
+
+
