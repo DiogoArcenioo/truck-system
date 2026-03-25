@@ -4,10 +4,11 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { EmpresaEntity } from './entities/empresa.entity';
 import { UsuarioEntity } from './entities/usuario.entity';
+import { InternalTokenGuard } from './guards/internal-token.guard';
 
 @Module({
   imports: [TypeOrmModule.forFeature([EmpresaEntity, UsuarioEntity])],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, InternalTokenGuard],
 })
 export class AuthModule {}
