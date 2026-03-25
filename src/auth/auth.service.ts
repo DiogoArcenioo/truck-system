@@ -35,6 +35,7 @@ type NomeTabelaCliente = 'cliente' | 'clientes';
 @Injectable()
 export class ServicoAuth {
   private static readonly USUARIO_ADMIN_CADASTRO = 'kodigo';
+  private static readonly ID_EMPRESA_RLS_PADRAO = 1;
   // Evita recriar tabelas e indices a cada requisicao.
   private esquemaPronto = false;
   private tabelaClienteResolvida: NomeTabelaCliente | null = null;
@@ -51,6 +52,8 @@ export class ServicoAuth {
 
       const resultado = await this.servicoBanco.withSignupTransaction(
         async (clienteDb) => {
+          const idEmpresaRls = this.definirIdEmpresaParaRls(dados.idEmpresa);
+          await this.configurarContextoRls(clienteDb, idEmpresaRls);
           const tabelaCliente = await this.resolverNomeTabelaCliente(clienteDb);
           const tabelaClienteSql = `app.${tabelaCliente}`;
 
@@ -83,7 +86,7 @@ export class ServicoAuth {
               codigoCliente,
               dados.nomeEmpresa,
               ServicoAuth.USUARIO_ADMIN_CADASTRO,
-              dados.idEmpresa,
+              idEmpresaRls,
             ],
           );
 
@@ -97,7 +100,7 @@ export class ServicoAuth {
             RETURNING id_usuario, nome, email
             `,
             [
-              dados.idEmpresa,
+              idEmpresaRls,
               dados.nomeAdministrador,
               dados.emailAdministrador,
               this.gerarHashDaSenha(dados.senha),
@@ -205,7 +208,7 @@ export class ServicoAuth {
     const telefoneEmpresa = this.paraNuloSeVazio(
       dadosRecebidos.telefoneEmpresa,
     );
-    const idEmpresa = Number(dadosRecebidos.idEmpresa ?? 1);
+    const idEmpresa = this.definirIdEmpresaParaRls(dadosRecebidos.idEmpresa);
     const nomeAdministrador = this.normalizarTexto(
       dadosRecebidos.nomeAdministrador,
     );
@@ -220,10 +223,6 @@ export class ServicoAuth {
 
     if (!emailEmpresa) {
       throw new BadRequestException('Informe o e-mail da empresa.');
-    }
-
-    if (!Number.isInteger(idEmpresa) || idEmpresa <= 0) {
-      throw new BadRequestException('Informe um idEmpresa valido.');
     }
 
     if (!nomeAdministrador) {
@@ -340,6 +339,33 @@ export class ServicoAuth {
     }
 
     this.esquemaPronto = true;
+  }
+
+  private definirIdEmpresaParaRls(
+    idEmpresaRecebido?: number | string,
+  ): number {
+    const idEmpresa = Number(idEmpresaRecebido);
+    if (!Number.isInteger(idEmpresa) || idEmpresa <= 0) {
+      return ServicoAuth.ID_EMPRESA_RLS_PADRAO;
+    }
+
+    return idEmpresa;
+  }
+
+  private async configurarContextoRls(
+    clienteDb: PoolClient,
+    idEmpresa: number,
+  ): Promise<void> {
+    const idEmpresaTexto = String(idEmpresa);
+    await clienteDb.query(`SELECT set_config('app.id_empresa', $1, true);`, [
+      idEmpresaTexto,
+    ]);
+    await clienteDb.query(`SELECT set_config('app.empresa_id', $1, true);`, [
+      idEmpresaTexto,
+    ]);
+    await clienteDb.query(`SELECT set_config('app.codigo_empresa', $1, true);`, [
+      idEmpresaTexto,
+    ]);
   }
 
   private async resolverNomeTabelaCliente(
