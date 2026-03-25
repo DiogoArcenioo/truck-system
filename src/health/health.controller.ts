@@ -31,4 +31,27 @@ export class HealthController {
       });
     }
   }
+
+  @Get('health/db-signup')
+  async healthDbSignup() {
+    try {
+      await this.databaseService.checkSignupConnection();
+      const currentUser = await this.databaseService.getSignupCurrentUser();
+
+      return {
+        status: 'ok',
+        database: 'connected',
+        mode: 'signup',
+        currentUser,
+      };
+    } catch (error) {
+      throw new ServiceUnavailableException({
+        status: 'error',
+        database: 'disconnected',
+        mode: 'signup',
+        message:
+          error instanceof Error ? error.message : 'Unknown database error',
+      });
+    }
+  }
 }

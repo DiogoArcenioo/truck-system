@@ -4,6 +4,7 @@ import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
+  private static readonly SIGNUP_ADMIN_USER = 'kodigo';
   private pool: Pool | null = null;
   private signupPool: Pool | null = null;
 
@@ -50,27 +51,36 @@ export class DatabaseService implements OnModuleDestroy {
       return this.signupPool;
     }
 
-    const signupHost = this.configService.get<string>('DB_SIGNUP_HOST');
-    const signupPortRaw = this.configService.get<string>('DB_SIGNUP_PORT');
-    const signupDatabase = this.configService.get<string>('DB_SIGNUP_NAME');
-    const signupUser = this.configService.get<string>('DB_SIGNUP_USER');
+    const signupHost =
+      this.configService.get<string>('DB_SIGNUP_HOST') ??
+      this.configService.get<string>('DB_HOST');
+    const signupPortRaw =
+      this.configService.get<string>('DB_SIGNUP_PORT') ??
+      this.configService.get<string>('DB_PORT') ??
+      '5432';
+    const signupDatabase =
+      this.configService.get<string>('DB_SIGNUP_NAME') ??
+      this.configService.get<string>('DB_NAME');
+    const signupUser =
+      this.configService.get<string>('DB_SIGNUP_USER')?.trim() ||
+      DatabaseService.SIGNUP_ADMIN_USER;
     const signupPassword = this.configService.get<string>('DB_SIGNUP_PASSWORD');
 
-    if (
-      !signupHost ||
-      !signupPortRaw ||
-      !signupDatabase ||
-      !signupUser ||
-      !signupPassword
-    ) {
+    if (!signupHost || !signupDatabase || !signupPassword) {
       throw new Error(
-        'Signup database env vars are missing. Set DB_SIGNUP_HOST, DB_SIGNUP_PORT, DB_SIGNUP_NAME, DB_SIGNUP_USER and DB_SIGNUP_PASSWORD.',
+        'Signup database env vars are missing. Set DB_SIGNUP_HOST, DB_SIGNUP_PORT, DB_SIGNUP_NAME and DB_SIGNUP_PASSWORD.',
       );
     }
 
     const port = Number(signupPortRaw);
     if (Number.isNaN(port)) {
       throw new Error('DB_SIGNUP_PORT must be a valid number.');
+    }
+
+    if (signupUser.toLowerCase() !== DatabaseService.SIGNUP_ADMIN_USER) {
+      throw new Error(
+        `DB_SIGNUP_USER must be "${DatabaseService.SIGNUP_ADMIN_USER}" to run signup as admin without RLS restrictions.`,
+      );
     }
 
     this.signupPool = new Pool({
@@ -92,6 +102,19 @@ export class DatabaseService implements OnModuleDestroy {
     await pool.query('SELECT 1');
   }
 
+  async checkSignupConnection(): Promise<void> {
+    const pool = this.getSignupPool();
+    await pool.query('SELECT 1');
+  }
+
+  async getSignupCurrentUser(): Promise<string> {
+    const pool = this.getSignupPool();
+    const resultado = await pool.query<{ current_user: string }>(
+      'SELECT current_user;',
+    );
+    return resultado.rows[0]?.current_user ?? 'unknown';
+  }
+
   async query<T extends QueryResultRow = QueryResultRow>(
     text: string,
     params: readonly unknown[] = [],
@@ -108,7 +131,9 @@ export class DatabaseService implements OnModuleDestroy {
     return pool.query<T>(text, params);
   }
 
-  async withTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  async withTransaction<T>(
+    callback: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
     const pool = this.getPool();
     const client = await pool.connect();
 
@@ -125,7 +150,9 @@ export class DatabaseService implements OnModuleDestroy {
     }
   }
 
-  async withSignupTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+  async withSignupTransaction<T>(
+    callback: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
     const pool = this.getSignupPool();
     const client = await pool.connect();
 

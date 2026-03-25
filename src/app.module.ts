@@ -18,4 +18,3 @@ import { HealthController } from './health/health.controller';
   providers: [AppService],
 })
 export class AppModule {}
-
