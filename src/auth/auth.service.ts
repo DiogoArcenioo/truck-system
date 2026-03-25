@@ -117,8 +117,8 @@ export class AuthService {
       emailEmpresa: this.normalizarTextoMaiusculo(dados.emailEmpresa),
       telefoneEmpresa: this.normalizarTextoMaiusculo(dados.telefoneEmpresa),
       ativo: dados.ativo ?? true,
-      status: this.normalizarTextoMaiusculo(dados.status ?? 'ATIVO'),
-      plano: this.normalizarTextoMaiusculo(dados.plano ?? 'BASICO'),
+      status: this.normalizarTextoMinusculo(dados.status ?? 'ativo'),
+      plano: this.normalizarTextoMinusculo(dados.plano ?? 'basico'),
       usuarioAtualizacao: this.normalizarTextoMaiusculo(
         dados.usuarioAtualizacao ?? 'SISTEMA',
       ),
@@ -231,6 +231,12 @@ export class AuthService {
           'Estrutura da tabela app.empresas esta diferente do esperado.',
         );
       }
+
+      if (erroPg.code === '23514') {
+        throw new BadRequestException(
+          'Dados invalidos para status/plano da empresa. Valores permitidos de status: ativo, inativo, bloqueado, cancelado, trial. Valores permitidos de plano: basico, pro, premium, enterprise.',
+        );
+      }
     }
 
     this.logger.error(
@@ -319,6 +325,10 @@ export class AuthService {
 
   private normalizarTextoMaiusculo(valor: string): string {
     return valor.trim().toUpperCase();
+  }
+
+  private normalizarTextoMinusculo(valor: string): string {
+    return valor.trim().toLowerCase();
   }
 
   private formatarCnpj(cnpj: string): string {
