@@ -1,8 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomBytes, scryptSync } from 'crypto';
 import { QueryFailedError, Repository } from 'typeorm';
 import { CreateEmpresaDto } from './dto/create-empresa.dto';
+import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { EmpresaEntity } from './entities/empresa.entity';
+import { UsuarioEntity } from './entities/usuario.entity';
 
 @Injectable()
 export class AuthService {
@@ -11,6 +14,8 @@ export class AuthService {
   constructor(
     @InjectRepository(EmpresaEntity)
     private readonly empresaRepository: Repository<EmpresaEntity>,
+    @InjectRepository(UsuarioEntity)
+    private readonly usuarioRepository: Repository<UsuarioEntity>,
   ) {}
 
   async registrarEmpresa(dados: CreateEmpresaDto) {
@@ -60,6 +65,49 @@ export class AuthService {
     }
   }
 
+  async registrarUsuario(dados: CreateUsuarioDto) {
+    const payload = this.normalizarEntradaUsuario(dados);
+
+    const empresaExiste = await this.empresaRepository.findOne({
+      select: { idEmpresa: true },
+      where: { idEmpresa: String(payload.idEmpresa) },
+    });
+
+    if (!empresaExiste) {
+      throw new BadRequestException('Empresa informada nao existe.');
+    }
+
+    try {
+      const usuario = await this.usuarioRepository.save(
+        this.usuarioRepository.create({
+          idEmpresa: String(payload.idEmpresa),
+          nome: payload.nome,
+          email: payload.email,
+          senhaHash: this.gerarHashDaSenha(payload.senha),
+          perfil: payload.perfil,
+          ativo: payload.ativo,
+          usuarioAtualizacao: payload.usuarioAtualizacao,
+          ultimoLoginEm: null,
+        }),
+      );
+
+      return {
+        sucesso: true,
+        mensagem: 'Usuario cadastrado com sucesso.',
+        usuario: {
+          idUsuario: Number(usuario.idUsuario),
+          idEmpresa: Number(usuario.idEmpresa),
+          nome: usuario.nome,
+          email: usuario.email,
+          perfil: usuario.perfil,
+          ativo: usuario.ativo,
+        },
+      };
+    } catch (error) {
+      this.tratarErroCadastroUsuario(error);
+    }
+  }
+
   private normalizarEntrada(dados: CreateEmpresaDto): CreateEmpresaDto {
     return {
       ...dados,
@@ -74,6 +122,26 @@ export class AuthService {
       ativo: dados.ativo ?? true,
       status: (dados.status ?? 'ativo').trim().toLowerCase(),
       plano: (dados.plano ?? 'basico').trim().toLowerCase(),
+      usuarioAtualizacao: (dados.usuarioAtualizacao ?? 'SISTEMA').trim(),
+    };
+  }
+
+  private normalizarEntradaUsuario(dados: CreateUsuarioDto): CreateUsuarioDto {
+    const senha = dados.senha.trim();
+
+    if (!this.senhaForte(senha)) {
+      throw new BadRequestException(
+        'A senha deve ter no minimo 8 caracteres, incluindo maiuscula, minuscula, numero e simbolo.',
+      );
+    }
+
+    return {
+      ...dados,
+      nome: dados.nome.trim(),
+      email: dados.email.trim().toLowerCase(),
+      senha,
+      perfil: (dados.perfil ?? 'ADM').trim().toUpperCase(),
+      ativo: dados.ativo ?? true,
       usuarioAtualizacao: (dados.usuarioAtualizacao ?? 'SISTEMA').trim(),
     };
   }
@@ -171,6 +239,72 @@ export class AuthService {
     );
     throw new BadRequestException(
       'Nao foi possivel cadastrar a empresa neste momento.',
+    );
+  }
+
+  private tratarErroCadastroUsuario(error: unknown): never {
+    if (error instanceof BadRequestException) {
+      throw error;
+    }
+
+    if (error instanceof QueryFailedError) {
+      const erroPg = error.driverError as {
+        code?: string;
+        message?: string;
+      };
+
+      this.logger.error(
+        `Falha ao registrar usuario. code=${erroPg.code ?? 'N/A'} message=${erroPg.message ?? 'Erro desconhecido'}`,
+      );
+
+      if (erroPg.code === '23505') {
+        throw new BadRequestException(
+          'Ja existe usuario cadastrado com esse e-mail.',
+        );
+      }
+
+      if (erroPg.code === '23503') {
+        throw new BadRequestException('Empresa informada nao existe.');
+      }
+
+      if (erroPg.code === '42501') {
+        throw new BadRequestException(
+          'Usuario do banco sem permissao para inserir em app.usuarios.',
+        );
+      }
+
+      if (erroPg.code === '42P01') {
+        throw new BadRequestException('Tabela app.usuarios nao encontrada.');
+      }
+
+      if (erroPg.code === '42703') {
+        throw new BadRequestException(
+          'Estrutura da tabela app.usuarios esta diferente do esperado.',
+        );
+      }
+    }
+
+    this.logger.error(
+      `Falha ao registrar usuario sem codigo SQL mapeado. message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+    );
+    throw new BadRequestException(
+      'Nao foi possivel cadastrar o usuario neste momento.',
+    );
+  }
+
+  private gerarHashDaSenha(senha: string): string {
+    const salt = randomBytes(16);
+    const hash = scryptSync(senha, salt, 64);
+    return `scrypt$N=16384,r=8,p=1$${salt.toString('base64')}$${hash.toString('base64')}`;
+  }
+
+  private senhaForte(senha: string): boolean {
+    return (
+      senha.length >= 8 &&
+      /[A-Z]/.test(senha) &&
+      /[a-z]/.test(senha) &&
+      /\d/.test(senha) &&
+      /[^A-Za-z0-9\s]/.test(senha)
     );
   }
 
