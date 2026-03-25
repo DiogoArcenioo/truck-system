@@ -1,18 +1,20 @@
 import {
   IsBoolean,
   IsEmail,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   Length,
   MaxLength,
+  Min,
 } from 'class-validator';
 
 export class CreateEmpresaDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
-  nomeFantasia!: string;
+  nomeEmpresa!: string;
 
   @IsString()
   @IsNotEmpty()
@@ -26,17 +28,12 @@ export class CreateEmpresaDto {
 
   @IsEmail()
   @MaxLength(150)
-  emailPrincipal!: string;
+  emailEmpresa!: string;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(25)
-  telefonePrincipal!: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(25)
-  whatsappPrincipal?: string;
+  telefoneEmpresa!: string;
 
   @IsOptional()
   @IsBoolean()
@@ -55,4 +52,24 @@ export class CreateEmpresaDto {
   @IsOptional()
   @IsString()
   usuarioAtualizacao?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  idEmpresa?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  nomeAdministrador?: string;
+
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(150)
+  emailAdministrador?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  senha?: string;
 }

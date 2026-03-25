@@ -28,17 +28,17 @@ export class AuthService {
           const codigo = await this.gerarProximoCodigo(repositorio);
           const slug = await this.gerarSlugUnico(
             repositorio,
-            payload.nomeFantasia,
+            payload.nomeEmpresa,
           );
 
           const novaEmpresa = repositorio.create({
             codigo,
-            nomeFantasia: payload.nomeFantasia,
+            nomeFantasia: payload.nomeEmpresa,
             razaoSocial: payload.razaoSocial,
             cnpj: payload.cnpj,
-            emailPrincipal: payload.emailPrincipal,
-            telefonePrincipal: payload.telefonePrincipal,
-            whatsappPrincipal: payload.whatsappPrincipal,
+            emailPrincipal: payload.emailEmpresa,
+            telefonePrincipal: payload.telefoneEmpresa,
+            whatsappPrincipal: payload.telefoneEmpresa,
             ativo: payload.ativo,
             status: payload.status,
             plano: payload.plano,
@@ -109,16 +109,13 @@ export class AuthService {
   }
 
   private normalizarEntrada(dados: CreateEmpresaDto): CreateEmpresaDto {
-    const whatsappPrincipal = dados.whatsappPrincipal ?? dados.telefonePrincipal;
-
     return {
       ...dados,
-      nomeFantasia: this.normalizarTextoMaiusculo(dados.nomeFantasia),
+      nomeEmpresa: this.normalizarTextoMaiusculo(dados.nomeEmpresa),
       razaoSocial: this.normalizarTextoMaiusculo(dados.razaoSocial),
       cnpj: this.formatarCnpj(dados.cnpj),
-      emailPrincipal: this.normalizarTextoMaiusculo(dados.emailPrincipal),
-      telefonePrincipal: this.normalizarTextoMaiusculo(dados.telefonePrincipal),
-      whatsappPrincipal: this.normalizarTextoMaiusculo(whatsappPrincipal),
+      emailEmpresa: this.normalizarTextoMaiusculo(dados.emailEmpresa),
+      telefoneEmpresa: this.normalizarTextoMaiusculo(dados.telefoneEmpresa),
       ativo: dados.ativo ?? true,
       status: this.normalizarTextoMaiusculo(dados.status ?? 'ATIVO'),
       plano: this.normalizarTextoMaiusculo(dados.plano ?? 'BASICO'),
