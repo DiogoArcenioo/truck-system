@@ -136,8 +136,8 @@ export class AuthService {
 
     return {
       ...dados,
-      nome: dados.nome.trim(),
-      email: dados.email.trim().toLowerCase(),
+      nome: this.normalizarTextoMaiusculo(dados.nome),
+      email: this.normalizarTextoMaiusculo(dados.email),
       senha,
       perfil: (dados.perfil ?? 'ADM').trim().toUpperCase(),
       ativo: dados.ativo ?? true,
