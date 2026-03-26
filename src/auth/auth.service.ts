@@ -1,9 +1,16 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomBytes, scryptSync } from 'crypto';
+import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { QueryFailedError, Repository } from 'typeorm';
 import { CreateEmpresaDto } from './dto/create-empresa.dto';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
+import { LoginDto } from './dto/login.dto';
 import { EmpresaEntity } from './entities/empresa.entity';
 import { UsuarioEntity } from './entities/usuario.entity';
 
@@ -12,6 +19,7 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
+    private readonly configService: ConfigService,
     @InjectRepository(EmpresaEntity)
     private readonly empresaRepository: Repository<EmpresaEntity>,
     @InjectRepository(UsuarioEntity)
@@ -106,6 +114,65 @@ export class AuthService {
     } catch (error) {
       this.tratarErroCadastroUsuario(error);
     }
+  }
+
+  async login(dados: LoginDto) {
+    const email = this.normalizarTextoMaiusculo(dados.email);
+    const senha = dados.senha.trim();
+
+    const usuario = await this.usuarioRepository.findOne({
+      where: { email },
+    });
+
+    if (!usuario || !usuario.ativo) {
+      throw new UnauthorizedException('Credenciais invalidas.');
+    }
+
+    const senhaValida = this.validarHashDaSenha(senha, usuario.senhaHash);
+    if (!senhaValida) {
+      throw new UnauthorizedException('Credenciais invalidas.');
+    }
+
+    const empresa = await this.empresaRepository.findOne({
+      where: { idEmpresa: usuario.idEmpresa },
+    });
+
+    if (!empresa || !empresa.ativo) {
+      throw new UnauthorizedException('Empresa vinculada nao disponivel.');
+    }
+
+    const expiresIn = this.parseJwtExpiresInToSeconds(
+      this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m',
+    );
+
+    const accessToken = this.assinarJwt({
+      sub: Number(usuario.idUsuario),
+      idEmpresa: Number(empresa.idEmpresa),
+      codigoEmpresa: empresa.codigo,
+      email: usuario.email,
+      perfil: usuario.perfil,
+    }, expiresIn);
+
+    await this.usuarioRepository.update(usuario.idUsuario, {
+      ultimoLoginEm: new Date(),
+      usuarioAtualizacao: 'AUTH_LOGIN',
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Login realizado com sucesso.',
+      accessToken,
+      tokenType: 'Bearer',
+      expiresIn,
+      usuario: {
+        idUsuario: Number(usuario.idUsuario),
+        nome: usuario.nome,
+        email: usuario.email,
+        perfil: usuario.perfil,
+        idEmpresa: Number(empresa.idEmpresa),
+        codigoEmpresa: empresa.codigo,
+      },
+    };
   }
 
   private normalizarEntrada(dados: CreateEmpresaDto): CreateEmpresaDto {
@@ -295,6 +362,147 @@ export class AuthService {
     throw new BadRequestException(
       'Nao foi possivel cadastrar o usuario neste momento.',
     );
+  }
+
+  private validarHashDaSenha(senha: string, senhaHash: string): boolean {
+    try {
+      const [algoritmo, paramsRaw, saltRaw, hashRaw] = senhaHash.split('$');
+
+      if (algoritmo !== 'scrypt' || !paramsRaw || !saltRaw || !hashRaw) {
+        return false;
+      }
+
+      const params = this.parseScryptParams(paramsRaw);
+      if (!params) {
+        return false;
+      }
+
+      const salt = Buffer.from(saltRaw, 'base64');
+      const hashEsperado = Buffer.from(hashRaw, 'base64');
+
+      if (salt.length === 0 || hashEsperado.length === 0) {
+        return false;
+      }
+
+      const hashCalculado = scryptSync(senha, salt, hashEsperado.length, {
+        N: params.N,
+        r: params.r,
+        p: params.p,
+      });
+
+      if (hashCalculado.length !== hashEsperado.length) {
+        return false;
+      }
+
+      return timingSafeEqual(hashCalculado, hashEsperado);
+    } catch {
+      return false;
+    }
+  }
+
+  private parseScryptParams(
+    paramsRaw: string,
+  ): { N: number; r: number; p: number } | null {
+    const entries = paramsRaw.split(',').map((part) => part.trim());
+    const map = new Map<string, number>();
+
+    for (const entry of entries) {
+      const [key, value] = entry.split('=');
+      const parsed = Number(value);
+      if (!key || !Number.isFinite(parsed) || parsed <= 0) {
+        return null;
+      }
+      map.set(key, parsed);
+    }
+
+    const N = map.get('N');
+    const r = map.get('r');
+    const p = map.get('p');
+
+    if (!N || !r || !p) {
+      return null;
+    }
+
+    return { N, r, p };
+  }
+
+  private assinarJwt(
+    payload: {
+      sub: number;
+      idEmpresa: number;
+      codigoEmpresa: string;
+      email: string;
+      perfil: string;
+    },
+    expiresInSeconds: number,
+  ): string {
+    const jwtSecret = this.configService.get<string>('JWT_SECRET')?.trim();
+
+    if (!jwtSecret) {
+      throw new UnauthorizedException(
+        'JWT_SECRET nao configurado no servidor.',
+      );
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const jti = randomBytes(16).toString('hex');
+
+    const header = {
+      alg: 'HS256',
+      typ: 'JWT',
+    };
+
+    const claims = {
+      ...payload,
+      iss: 'truck-system',
+      iat: now,
+      exp: now + expiresInSeconds,
+      jti,
+    };
+
+    const encodedHeader = this.toBase64Url(JSON.stringify(header));
+    const encodedClaims = this.toBase64Url(JSON.stringify(claims));
+    const signingInput = `${encodedHeader}.${encodedClaims}`;
+
+    const signature = createHmac('sha256', jwtSecret)
+      .update(signingInput)
+      .digest('base64url');
+
+    return `${signingInput}.${signature}`;
+  }
+
+  private parseJwtExpiresInToSeconds(raw: string): number {
+    const normalized = raw.trim().toLowerCase();
+    const match = normalized.match(/^(\d+)([smhd]?)$/);
+
+    if (!match) {
+      return 900;
+    }
+
+    const value = Number(match[1]);
+    const unit = match[2] || 's';
+
+    if (!Number.isFinite(value) || value <= 0) {
+      return 900;
+    }
+
+    if (unit === 'm') {
+      return value * 60;
+    }
+
+    if (unit === 'h') {
+      return value * 3600;
+    }
+
+    if (unit === 'd') {
+      return value * 86400;
+    }
+
+    return value;
+  }
+
+  private toBase64Url(value: string): string {
+    return Buffer.from(value, 'utf8').toString('base64url');
   }
 
   private gerarHashDaSenha(senha: string): string {

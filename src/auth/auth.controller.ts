@@ -2,6 +2,7 @@ import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateEmpresaDto } from './dto/create-empresa.dto';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
+import { LoginDto } from './dto/login.dto';
 import { InternalTokenGuard } from './guards/internal-token.guard';
 
 @Controller('api/auth')
@@ -18,5 +19,11 @@ export class AuthController {
   @UseGuards(InternalTokenGuard)
   async registrarUsuario(@Body() dados: CreateUsuarioDto) {
     return this.authService.registrarUsuario(dados);
+  }
+
+  @Post('login')
+  @UseGuards(InternalTokenGuard)
+  async login(@Body() dados: LoginDto) {
+    return this.authService.login(dados);
   }
 }
