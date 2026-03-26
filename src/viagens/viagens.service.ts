@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { configurarContextoEmpresaRls } from '../common/database/rls.util';
 import { JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { AtualizarViagemDto } from './dto/atualizar-viagem.dto';
 import { CriarViagemDto } from './dto/criar-viagem.dto';
@@ -57,179 +58,190 @@ export class ViagensService {
   ) {}
 
   async listarTodas(idEmpresa: number) {
-    const viagens = await this.viagemRepository.find({
-      where: { idEmpresa: String(idEmpresa) },
-      order: { dataInicio: 'DESC', idViagem: 'DESC' },
-    });
+    return this.executarComRls(idEmpresa, async (viagemRepository) => {
+      const viagens = await viagemRepository.find({
+        where: { idEmpresa: String(idEmpresa) },
+        order: { dataInicio: 'DESC', idViagem: 'DESC' },
+      });
 
-    return {
-      sucesso: true,
-      total: viagens.length,
-      viagens: viagens.map((viagem) => this.mapearViagem(viagem)),
-    };
+      return {
+        sucesso: true,
+        total: viagens.length,
+        viagens: viagens.map((viagem) => this.mapearViagem(viagem)),
+      };
+    });
   }
 
   async listarComFiltro(idEmpresa: number, filtro: FiltroViagensDto) {
     this.validarIntervalosDoFiltro(filtro);
+    return this.executarComRls(idEmpresa, async (viagemRepository) => {
+      const pagina = filtro.pagina ?? 1;
+      const limite = filtro.limite ?? 30;
+      const offset = (pagina - 1) * limite;
 
-    const pagina = filtro.pagina ?? 1;
-    const limite = filtro.limite ?? 30;
-    const offset = (pagina - 1) * limite;
+      const query = viagemRepository
+        .createQueryBuilder('viagem')
+        .where('viagem.idEmpresa = :idEmpresa', {
+          idEmpresa: String(idEmpresa),
+        });
 
-    const query = this.viagemRepository
-      .createQueryBuilder('viagem')
-      .where('viagem.idEmpresa = :idEmpresa', { idEmpresa: String(idEmpresa) });
+      if (filtro.idViagem !== undefined) {
+        query.andWhere('viagem.idViagem = :idViagem', {
+          idViagem: filtro.idViagem,
+        });
+      }
 
-    if (filtro.idViagem !== undefined) {
-      query.andWhere('viagem.idViagem = :idViagem', {
-        idViagem: filtro.idViagem,
-      });
-    }
+      if (filtro.idVeiculo !== undefined) {
+        query.andWhere('viagem.idVeiculo = :idVeiculo', {
+          idVeiculo: filtro.idVeiculo,
+        });
+      }
 
-    if (filtro.idVeiculo !== undefined) {
-      query.andWhere('viagem.idVeiculo = :idVeiculo', {
-        idVeiculo: filtro.idVeiculo,
-      });
-    }
+      if (filtro.idMotorista !== undefined) {
+        query.andWhere('viagem.idMotorista = :idMotorista', {
+          idMotorista: filtro.idMotorista,
+        });
+      }
 
-    if (filtro.idMotorista !== undefined) {
-      query.andWhere('viagem.idMotorista = :idMotorista', {
-        idMotorista: filtro.idMotorista,
-      });
-    }
+      if (filtro.status !== undefined) {
+        query.andWhere('viagem.status = :status', {
+          status: filtro.status,
+        });
+      }
 
-    if (filtro.status !== undefined) {
-      query.andWhere('viagem.status = :status', {
-        status: filtro.status,
-      });
-    }
+      if (filtro.texto !== undefined) {
+        query.andWhere("COALESCE(viagem.observacao, '') ILIKE :texto", {
+          texto: `%${filtro.texto}%`,
+        });
+      }
 
-    if (filtro.texto !== undefined) {
-      query.andWhere("COALESCE(viagem.observacao, '') ILIKE :texto", {
-        texto: `%${filtro.texto}%`,
-      });
-    }
+      if (filtro.dataInicioDe !== undefined) {
+        query.andWhere('viagem.dataInicio >= :dataInicioDe', {
+          dataInicioDe: filtro.dataInicioDe,
+        });
+      }
 
-    if (filtro.dataInicioDe !== undefined) {
-      query.andWhere('viagem.dataInicio >= :dataInicioDe', {
-        dataInicioDe: filtro.dataInicioDe,
-      });
-    }
+      if (filtro.dataInicioAte !== undefined) {
+        query.andWhere('viagem.dataInicio <= :dataInicioAte', {
+          dataInicioAte: filtro.dataInicioAte,
+        });
+      }
 
-    if (filtro.dataInicioAte !== undefined) {
-      query.andWhere('viagem.dataInicio <= :dataInicioAte', {
-        dataInicioAte: filtro.dataInicioAte,
-      });
-    }
+      if (filtro.dataFimDe !== undefined) {
+        query.andWhere('viagem.dataFim >= :dataFimDe', {
+          dataFimDe: filtro.dataFimDe,
+        });
+      }
 
-    if (filtro.dataFimDe !== undefined) {
-      query.andWhere('viagem.dataFim >= :dataFimDe', {
-        dataFimDe: filtro.dataFimDe,
-      });
-    }
+      if (filtro.dataFimAte !== undefined) {
+        query.andWhere('viagem.dataFim <= :dataFimAte', {
+          dataFimAte: filtro.dataFimAte,
+        });
+      }
 
-    if (filtro.dataFimAte !== undefined) {
-      query.andWhere('viagem.dataFim <= :dataFimAte', {
-        dataFimAte: filtro.dataFimAte,
-      });
-    }
+      if (filtro.kmInicialMin !== undefined) {
+        query.andWhere('viagem.kmInicial >= :kmInicialMin', {
+          kmInicialMin: filtro.kmInicialMin,
+        });
+      }
 
-    if (filtro.kmInicialMin !== undefined) {
-      query.andWhere('viagem.kmInicial >= :kmInicialMin', {
-        kmInicialMin: filtro.kmInicialMin,
-      });
-    }
+      if (filtro.kmInicialMax !== undefined) {
+        query.andWhere('viagem.kmInicial <= :kmInicialMax', {
+          kmInicialMax: filtro.kmInicialMax,
+        });
+      }
 
-    if (filtro.kmInicialMax !== undefined) {
-      query.andWhere('viagem.kmInicial <= :kmInicialMax', {
-        kmInicialMax: filtro.kmInicialMax,
-      });
-    }
+      if (filtro.kmFinalMin !== undefined) {
+        query.andWhere('viagem.kmFinal >= :kmFinalMin', {
+          kmFinalMin: filtro.kmFinalMin,
+        });
+      }
 
-    if (filtro.kmFinalMin !== undefined) {
-      query.andWhere('viagem.kmFinal >= :kmFinalMin', {
-        kmFinalMin: filtro.kmFinalMin,
-      });
-    }
+      if (filtro.kmFinalMax !== undefined) {
+        query.andWhere('viagem.kmFinal <= :kmFinalMax', {
+          kmFinalMax: filtro.kmFinalMax,
+        });
+      }
 
-    if (filtro.kmFinalMax !== undefined) {
-      query.andWhere('viagem.kmFinal <= :kmFinalMax', {
-        kmFinalMax: filtro.kmFinalMax,
-      });
-    }
+      if (filtro.valorFreteMin !== undefined) {
+        query.andWhere('viagem.valorFrete >= :valorFreteMin', {
+          valorFreteMin: filtro.valorFreteMin,
+        });
+      }
 
-    if (filtro.valorFreteMin !== undefined) {
-      query.andWhere('viagem.valorFrete >= :valorFreteMin', {
-        valorFreteMin: filtro.valorFreteMin,
-      });
-    }
+      if (filtro.valorFreteMax !== undefined) {
+        query.andWhere('viagem.valorFrete <= :valorFreteMax', {
+          valorFreteMax: filtro.valorFreteMax,
+        });
+      }
 
-    if (filtro.valorFreteMax !== undefined) {
-      query.andWhere('viagem.valorFrete <= :valorFreteMax', {
-        valorFreteMax: filtro.valorFreteMax,
-      });
-    }
+      if (filtro.totalDespesasMin !== undefined) {
+        query.andWhere('viagem.totalDespesas >= :totalDespesasMin', {
+          totalDespesasMin: filtro.totalDespesasMin,
+        });
+      }
 
-    if (filtro.totalDespesasMin !== undefined) {
-      query.andWhere('viagem.totalDespesas >= :totalDespesasMin', {
-        totalDespesasMin: filtro.totalDespesasMin,
-      });
-    }
+      if (filtro.totalDespesasMax !== undefined) {
+        query.andWhere('viagem.totalDespesas <= :totalDespesasMax', {
+          totalDespesasMax: filtro.totalDespesasMax,
+        });
+      }
 
-    if (filtro.totalDespesasMax !== undefined) {
-      query.andWhere('viagem.totalDespesas <= :totalDespesasMax', {
-        totalDespesasMax: filtro.totalDespesasMax,
-      });
-    }
+      if (filtro.totalLucroMin !== undefined) {
+        query.andWhere('viagem.totalLucro >= :totalLucroMin', {
+          totalLucroMin: filtro.totalLucroMin,
+        });
+      }
 
-    if (filtro.totalLucroMin !== undefined) {
-      query.andWhere('viagem.totalLucro >= :totalLucroMin', {
-        totalLucroMin: filtro.totalLucroMin,
-      });
-    }
+      if (filtro.totalLucroMax !== undefined) {
+        query.andWhere('viagem.totalLucro <= :totalLucroMax', {
+          totalLucroMax: filtro.totalLucroMax,
+        });
+      }
 
-    if (filtro.totalLucroMax !== undefined) {
-      query.andWhere('viagem.totalLucro <= :totalLucroMax', {
-        totalLucroMax: filtro.totalLucroMax,
-      });
-    }
+      if (filtro.apenasAbertas === true) {
+        query.andWhere('viagem.dataFim IS NULL');
+      } else if (filtro.apenasAbertas === false) {
+        query.andWhere('viagem.dataFim IS NOT NULL');
+      }
 
-    if (filtro.apenasAbertas === true) {
-      query.andWhere('viagem.dataFim IS NULL');
-    } else if (filtro.apenasAbertas === false) {
-      query.andWhere('viagem.dataFim IS NOT NULL');
-    }
+      const ordem = filtro.ordem ?? 'DESC';
+      const colunaOrdenacao =
+        this.colunasOrdenacao[filtro.ordenarPor ?? 'data_inicio'] ??
+        this.colunasOrdenacao.data_inicio;
 
-    const ordem = filtro.ordem ?? 'DESC';
-    const colunaOrdenacao =
-      this.colunasOrdenacao[filtro.ordenarPor ?? 'data_inicio'] ??
-      this.colunasOrdenacao.data_inicio;
+      query
+        .orderBy(colunaOrdenacao, ordem)
+        .addOrderBy('viagem.idViagem', 'DESC')
+        .skip(offset)
+        .take(limite);
 
-    query
-      .orderBy(colunaOrdenacao, ordem)
-      .addOrderBy('viagem.idViagem', 'DESC')
-      .skip(offset)
-      .take(limite);
+      const [viagens, total] = await query.getManyAndCount();
 
-    const [viagens, total] = await query.getManyAndCount();
-
-    return {
-      sucesso: true,
-      pagina,
-      limite,
-      total,
-      paginas: total > 0 ? Math.ceil(total / limite) : 0,
-      viagens: viagens.map((viagem) => this.mapearViagem(viagem)),
-    };
+      return {
+        sucesso: true,
+        pagina,
+        limite,
+        total,
+        paginas: total > 0 ? Math.ceil(total / limite) : 0,
+        viagens: viagens.map((viagem) => this.mapearViagem(viagem)),
+      };
+    });
   }
 
   async buscarPorId(idEmpresa: number, idViagem: number) {
-    const viagem = await this.buscarViagemPorIdOuFalhar(idEmpresa, idViagem);
+    return this.executarComRls(idEmpresa, async (viagemRepository) => {
+      const viagem = await this.buscarViagemPorIdOuFalhar(
+        viagemRepository,
+        idEmpresa,
+        idViagem,
+      );
 
-    return {
-      sucesso: true,
-      viagem: this.mapearViagem(viagem),
-    };
+      return {
+        sucesso: true,
+        viagem: this.mapearViagem(viagem),
+      };
+    });
   }
 
   async cadastrar(
@@ -246,34 +258,36 @@ export class ViagensService {
     });
 
     try {
-      const viagem = await this.viagemRepository.save(
-        this.viagemRepository.create({
-          idEmpresa: String(idEmpresa),
-          idVeiculo: payload.idVeiculo,
-          idMotorista: payload.idMotorista,
-          dataInicio: payload.dataInicio,
-          dataFim: payload.dataFim,
-          kmInicial: payload.kmInicial,
-          kmFinal: payload.kmFinal,
-          status: payload.status,
-          observacao: payload.observacao,
-          valorFrete: payload.valorFrete,
-          media: payload.media,
-          totalDespesas: payload.totalDespesas,
-          totalAbastecimentos: payload.totalAbastecimentos,
-          totalKm: payload.totalKm,
-          totalLucro: payload.totalLucro,
-          usuarioAtualizacao:
-            payload.usuarioAtualizacao ??
-            this.normalizarUsuarioAtualizacao(usuarioJwt.email),
-        }),
-      );
+      return this.executarComRls(idEmpresa, async (viagemRepository) => {
+        const viagem = await viagemRepository.save(
+          viagemRepository.create({
+            idEmpresa: String(idEmpresa),
+            idVeiculo: payload.idVeiculo,
+            idMotorista: payload.idMotorista,
+            dataInicio: payload.dataInicio,
+            dataFim: payload.dataFim,
+            kmInicial: payload.kmInicial,
+            kmFinal: payload.kmFinal,
+            status: payload.status,
+            observacao: payload.observacao,
+            valorFrete: payload.valorFrete,
+            media: payload.media,
+            totalDespesas: payload.totalDespesas,
+            totalAbastecimentos: payload.totalAbastecimentos,
+            totalKm: payload.totalKm,
+            totalLucro: payload.totalLucro,
+            usuarioAtualizacao:
+              payload.usuarioAtualizacao ??
+              this.normalizarUsuarioAtualizacao(usuarioJwt.email),
+          }),
+        );
 
-      return {
-        sucesso: true,
-        mensagem: 'Viagem cadastrada com sucesso.',
-        viagem: this.mapearViagem(viagem),
-      };
+        return {
+          sucesso: true,
+          mensagem: 'Viagem cadastrada com sucesso.',
+          viagem: this.mapearViagem(viagem),
+        };
+      });
     } catch (error) {
       this.tratarErroPersistencia(error, 'cadastrar');
     }
@@ -285,73 +299,83 @@ export class ViagensService {
     dados: AtualizarViagemDto,
     usuarioJwt: JwtUsuarioPayload,
   ) {
-    const viagemAtual = await this.buscarViagemPorIdOuFalhar(
-      idEmpresa,
-      idViagem,
-    );
-    const payload = this.normalizarAtualizacao(dados);
-
-    const dataInicio = payload.dataInicio ?? viagemAtual.dataInicio;
-    const dataFim =
-      payload.dataFim !== undefined ? payload.dataFim : viagemAtual.dataFim;
-    const kmInicial = payload.kmInicial ?? viagemAtual.kmInicial;
-    const kmFinal =
-      payload.kmFinal !== undefined ? payload.kmFinal : viagemAtual.kmFinal;
-
-    this.validarConsistenciaDaViagem({
-      dataInicio,
-      dataFim,
-      kmInicial,
-      kmFinal,
-    });
-
     try {
-      await this.viagemRepository.update(
-        { idViagem, idEmpresa: String(idEmpresa) },
-        {
-          ...payload,
-          usuarioAtualizacao:
-            payload.usuarioAtualizacao ??
-            this.normalizarUsuarioAtualizacao(usuarioJwt.email),
-        },
-      );
+      return this.executarComRls(idEmpresa, async (viagemRepository) => {
+        const viagemAtual = await this.buscarViagemPorIdOuFalhar(
+          viagemRepository,
+          idEmpresa,
+          idViagem,
+        );
+        const payload = this.normalizarAtualizacao(dados);
 
-      const viagemAtualizada = await this.buscarViagemPorIdOuFalhar(
-        idEmpresa,
-        idViagem,
-      );
+        const dataInicio = payload.dataInicio ?? viagemAtual.dataInicio;
+        const dataFim =
+          payload.dataFim !== undefined ? payload.dataFim : viagemAtual.dataFim;
+        const kmInicial = payload.kmInicial ?? viagemAtual.kmInicial;
+        const kmFinal =
+          payload.kmFinal !== undefined ? payload.kmFinal : viagemAtual.kmFinal;
 
-      return {
-        sucesso: true,
-        mensagem: 'Viagem atualizada com sucesso.',
-        viagem: this.mapearViagem(viagemAtualizada),
-      };
+        this.validarConsistenciaDaViagem({
+          dataInicio,
+          dataFim,
+          kmInicial,
+          kmFinal,
+        });
+
+        await viagemRepository.update(
+          { idViagem, idEmpresa: String(idEmpresa) },
+          {
+            ...payload,
+            usuarioAtualizacao:
+              payload.usuarioAtualizacao ??
+              this.normalizarUsuarioAtualizacao(usuarioJwt.email),
+          },
+        );
+
+        const viagemAtualizada = await this.buscarViagemPorIdOuFalhar(
+          viagemRepository,
+          idEmpresa,
+          idViagem,
+        );
+
+        return {
+          sucesso: true,
+          mensagem: 'Viagem atualizada com sucesso.',
+          viagem: this.mapearViagem(viagemAtualizada),
+        };
+      });
     } catch (error) {
       this.tratarErroPersistencia(error, 'atualizar');
     }
   }
 
   async remover(idEmpresa: number, idViagem: number) {
-    const resultado = await this.viagemRepository.delete({
-      idViagem,
-      idEmpresa: String(idEmpresa),
+    return this.executarComRls(idEmpresa, async (viagemRepository) => {
+      const resultado = await viagemRepository.delete({
+        idViagem,
+        idEmpresa: String(idEmpresa),
+      });
+
+      if (!resultado.affected) {
+        throw new NotFoundException(
+          'Viagem nao encontrada para a empresa logada.',
+        );
+      }
+
+      return {
+        sucesso: true,
+        mensagem: 'Viagem removida com sucesso.',
+        idViagem,
+      };
     });
-
-    if (!resultado.affected) {
-      throw new NotFoundException(
-        'Viagem nao encontrada para a empresa logada.',
-      );
-    }
-
-    return {
-      sucesso: true,
-      mensagem: 'Viagem removida com sucesso.',
-      idViagem,
-    };
   }
 
-  private async buscarViagemPorIdOuFalhar(idEmpresa: number, idViagem: number) {
-    const viagem = await this.viagemRepository.findOne({
+  private async buscarViagemPorIdOuFalhar(
+    viagemRepository: Repository<ViagemEntity>,
+    idEmpresa: number,
+    idViagem: number,
+  ) {
+    const viagem = await viagemRepository.findOne({
       where: {
         idViagem,
         idEmpresa: String(idEmpresa),
@@ -365,6 +389,20 @@ export class ViagensService {
     }
 
     return viagem;
+  }
+
+  private async executarComRls<T>(
+    idEmpresa: number,
+    callback: (
+      viagemRepository: Repository<ViagemEntity>,
+      manager: EntityManager,
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.viagemRepository.manager.transaction(async (manager) => {
+      await configurarContextoEmpresaRls(manager, idEmpresa);
+      const viagemRepository = manager.getRepository(ViagemEntity);
+      return callback(viagemRepository, manager);
+    });
   }
 
   private normalizarCriacao(dados: CriarViagemDto) {
