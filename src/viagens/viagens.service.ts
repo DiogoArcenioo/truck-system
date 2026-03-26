@@ -414,7 +414,9 @@ export class ViagensService {
       kmInicial: dados.kmInicial,
       kmFinal: dados.kmFinal ?? null,
       status: (dados.status ?? 'A').trim().toUpperCase(),
-      observacao: dados.observacao?.trim() ? dados.observacao.trim() : null,
+      observacao: dados.observacao?.trim()
+        ? dados.observacao.trim().toUpperCase()
+        : null,
       valorFrete: dados.valorFrete ?? 0,
       media: dados.media ?? 0,
       totalDespesas: dados.totalDespesas ?? 0,
