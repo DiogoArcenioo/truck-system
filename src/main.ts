@@ -7,16 +7,16 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  const corsOriginsRaw = process.env.CORS_ORIGINS ?? "";
+  const corsOriginsRaw = process.env.CORS_ORIGINS ?? '';
   const corsOrigins = corsOriginsRaw
-    .split(",")
+    .split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
 
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : true,
-    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-    allowedHeaders: "Content-Type, Authorization",
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Authorization',
   });
 
   app.useStaticAssets(join(__dirname, '..', 'public'));

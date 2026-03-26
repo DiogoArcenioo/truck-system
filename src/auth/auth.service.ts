@@ -145,13 +145,16 @@ export class AuthService {
       this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m',
     );
 
-    const accessToken = this.assinarJwt({
-      sub: Number(usuario.idUsuario),
-      idEmpresa: Number(empresa.idEmpresa),
-      codigoEmpresa: empresa.codigo,
-      email: usuario.email,
-      perfil: usuario.perfil,
-    }, expiresIn);
+    const accessToken = this.assinarJwt(
+      {
+        sub: Number(usuario.idUsuario),
+        idEmpresa: Number(empresa.idEmpresa),
+        codigoEmpresa: empresa.codigo,
+        email: usuario.email,
+        perfil: usuario.perfil,
+      },
+      expiresIn,
+    );
 
     await this.usuarioRepository.update(usuario.idUsuario, {
       ultimoLoginEm: new Date(),
