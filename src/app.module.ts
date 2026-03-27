@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
+import { AbastecimentosModule } from './abastecimentos/abastecimentos.module';
+import { FornecedorModule } from './fornecedor/fornecedor.module';
 import { HealthController } from './health/health.controller';
 import { MotoristasModule } from './motoristas/motoristas.module';
 import { VeiculoModule } from './veiculo/veiculo.module';
@@ -51,6 +53,8 @@ import { ViagensModule } from './viagens/viagens.module';
       },
     }),
     AuthModule,
+    AbastecimentosModule,
+    FornecedorModule,
     VeiculoModule,
     MotoristasModule,
     ViagensModule,

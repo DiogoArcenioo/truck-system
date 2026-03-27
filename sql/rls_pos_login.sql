@@ -56,4 +56,36 @@ CREATE POLICY pol_motoristas_empresa
     id_empresa = app.current_empresa_id()
   );
 
+ALTER TABLE app.abastecimentos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.abastecimentos FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS pol_abastecimentos_empresa ON app.abastecimentos;
+DROP POLICY IF EXISTS abastecimentos_rls_empresa ON app.abastecimentos;
+CREATE POLICY pol_abastecimentos_empresa
+  ON app.abastecimentos
+  FOR ALL
+  TO app_user
+  USING (
+    id_empresa = app.current_empresa_id()
+  )
+  WITH CHECK (
+    id_empresa = app.current_empresa_id()
+  );
+
+ALTER TABLE app.fornecedor ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.fornecedor FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS pol_fornecedor_empresa ON app.fornecedor;
+DROP POLICY IF EXISTS fornecedor_rls_empresa ON app.fornecedor;
+CREATE POLICY pol_fornecedor_empresa
+  ON app.fornecedor
+  FOR ALL
+  TO app_user
+  USING (
+    id_empresa = app.current_empresa_id()
+  )
+  WITH CHECK (
+    id_empresa = app.current_empresa_id()
+  );
+
 COMMIT;
