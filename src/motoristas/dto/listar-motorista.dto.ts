@@ -6,4 +6,5 @@ export class ListarMotoristaDto {
   categoriaCnh!: string;
   validadeCnh!: string;
   status!: string;
+  statusDescricao!: string;
 }
