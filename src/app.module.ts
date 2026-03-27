@@ -7,6 +7,8 @@ import { AbastecimentosModule } from './abastecimentos/abastecimentos.module';
 import { FornecedorModule } from './fornecedor/fornecedor.module';
 import { HealthController } from './health/health.controller';
 import { MotoristasModule } from './motoristas/motoristas.module';
+import { OrdemServicoModule } from './ordem-servico/ordem-servico.module';
+import { ProdutoModule } from './produto/produto.module';
 import { VeiculoModule } from './veiculo/veiculo.module';
 import { ViagensModule } from './viagens/viagens.module';
 
@@ -58,6 +60,8 @@ import { ViagensModule } from './viagens/viagens.module';
     VeiculoModule,
     MotoristasModule,
     ViagensModule,
+    ProdutoModule,
+    OrdemServicoModule,
   ],
   controllers: [HealthController],
 })
