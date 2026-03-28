@@ -4,13 +4,18 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { AbastecimentosModule } from './abastecimentos/abastecimentos.module';
+import { CombustiveisModule } from './combustiveis/combustiveis.module';
+import { CorVeiculoModule } from './cor-veiculo/cor-veiculo.module';
 import { FornecedorModule } from './fornecedor/fornecedor.module';
 import { HealthController } from './health/health.controller';
+import { MarcaVeiculoModule } from './marca-veiculo/marca-veiculo.module';
+import { ModeloVeiculoModule } from './modelo-veiculo/modelo-veiculo.module';
 import { MotoristasModule } from './motoristas/motoristas.module';
 import { OrdemServicoModule } from './ordem-servico/ordem-servico.module';
 import { ProdutoModule } from './produto/produto.module';
 import { ProdutoReferenciasModule } from './produto-referencias/produto-referencias.module';
 import { RequisicaoModule } from './requisicao/requisicao.module';
+import { TiposVeiculoModule } from './tipos-veiculo/tipos-veiculo.module';
 import { VeiculoModule } from './veiculo/veiculo.module';
 import { ViagensModule } from './viagens/viagens.module';
 
@@ -58,7 +63,11 @@ import { ViagensModule } from './viagens/viagens.module';
     }),
     AuthModule,
     AbastecimentosModule,
+    CombustiveisModule,
+    CorVeiculoModule,
     FornecedorModule,
+    MarcaVeiculoModule,
+    ModeloVeiculoModule,
     VeiculoModule,
     MotoristasModule,
     ViagensModule,
@@ -66,6 +75,7 @@ import { ViagensModule } from './viagens/viagens.module';
     ProdutoReferenciasModule,
     OrdemServicoModule,
     RequisicaoModule,
+    TiposVeiculoModule,
   ],
   controllers: [HealthController],
 })
