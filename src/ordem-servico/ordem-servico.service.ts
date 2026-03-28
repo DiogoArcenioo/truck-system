@@ -210,14 +210,12 @@ export class OrdemServicoService {
     usuarioJwt: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const payload = this.normalizarCriacao(dados, usuarioJwt);
-        const idOs = await this.obterProximoId(manager, 'app.ordem_servico_id_os_seq');
 
         const rows = (await manager.query(
           `
             INSERT INTO app.ordem_servico (
-              id_os,
               id_veiculo,
               data_cadastro,
               data_fechamento,
@@ -233,11 +231,10 @@ export class OrdemServicoService {
               tipo_servico,
               id_empresa
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12,$13,$14)
+            VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9,$10,$11,$12,$13)
             RETURNING *
           `,
           [
-            idOs,
             payload.idVeiculo,
             payload.dataCadastro,
             payload.dataFechamento,
@@ -277,7 +274,7 @@ export class OrdemServicoService {
     usuarioJwt: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const atual = await this.buscarRegistroPorIdOuFalhar(manager, idEmpresa, idOs);
         const payload = this.normalizarAtualizacao(dados, usuarioJwt);
 
@@ -664,22 +661,6 @@ export class OrdemServicoService {
     return Number.isNaN(data.getTime()) ? null : data.toISOString();
   }
 
-  private async obterProximoId(
-    manager: EntityManager,
-    sequence: string,
-  ): Promise<number> {
-    const rows = (await manager.query(
-      `SELECT nextval('${sequence}')::bigint AS id`,
-    )) as Array<{ id?: string | number }>;
-
-    const id = Number(rows[0]?.id ?? 0);
-    if (!Number.isFinite(id) || id <= 0) {
-      throw new BadRequestException(`Nao foi possivel gerar id para ${sequence}.`);
-    }
-
-    return id;
-  }
-
   private async executarComRls<T>(
     idEmpresa: number,
     callback: (manager: EntityManager) => Promise<T>,
@@ -696,7 +677,11 @@ export class OrdemServicoService {
     }
 
     if (error instanceof QueryFailedError) {
-      const erroPg = error.driverError as { code?: string };
+      const erroPg = error.driverError as {
+        code?: string;
+        detail?: string;
+        message?: string;
+      };
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
@@ -712,6 +697,46 @@ export class OrdemServicoService {
 
       if (erroPg.code === '22P02' || erroPg.code === '22007') {
         throw new BadRequestException('Formato de numero ou data invalido.');
+      }
+
+      if (erroPg.code === '23502') {
+        throw new BadRequestException(
+          'Campos obrigatorios nao foram informados para cadastrar/atualizar a ordem de servico.',
+        );
+      }
+
+      if (erroPg.code === '42501') {
+        throw new BadRequestException(
+          'Permissao insuficiente no banco (RLS/sequence). Verifique policy da empresa e grants.',
+        );
+      }
+
+      if (erroPg.code === '428C9') {
+        throw new BadRequestException(
+          'A API tentou inserir valor em coluna identity GENERATED ALWAYS. IDs auto incremento nao devem ser enviados no INSERT.',
+        );
+      }
+
+      if (erroPg.code === '42703') {
+        throw new BadRequestException(
+          'Erro de estrutura no banco (coluna inexistente em SQL/trigger/function).',
+        );
+      }
+
+      if (erroPg.code === '25P02') {
+        throw new BadRequestException(
+          'Transacao abortada no banco por erro SQL anterior. Verifique triggers/funcoes e o primeiro erro no log do banco.',
+        );
+      }
+
+      const detalhe = [erroPg.code, erroPg.detail ?? erroPg.message]
+        .filter((parte): parte is string => Boolean(parte))
+        .join(' - ');
+
+      if (detalhe) {
+        throw new BadRequestException(
+          `Falha ao ${acao} ordem de servico no banco: ${detalhe}.`,
+        );
       }
     }
 
