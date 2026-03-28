@@ -1178,7 +1178,12 @@ export class FornecedorService {
       const erroPg = error.driverError as { code?: string; detail?: string; message?: string };
 
       if (erroPg.code === '23503') {
-        throw new BadRequestException('Registro vinculado inexistente para a operacao.');
+        if (acao === 'remover') {
+          throw new BadRequestException(
+            'Fornecedor possui registros vinculados e nao pode ser excluido. Altere o status para Inativo.',
+          );
+        }
+        throw new BadRequestException('Registro relacionado nao encontrado para a operacao.');
       }
       if (erroPg.code === '23505') {
         throw new BadRequestException('Ja existe um registro igual para os dados informados.');
