@@ -2,6 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  HttpException,
+  InternalServerErrorException,
+  Logger,
   Param,
   ParseIntPipe,
   Post,
@@ -24,6 +27,8 @@ type RequisicaoAutenticada = {
 @Controller('api/requisicao')
 @UseGuards(JwtAuthGuard)
 export class RequisicaoController {
+  private readonly logger = new Logger(RequisicaoController.name);
+
   constructor(private readonly requisicaoService: RequisicaoService) {}
 
   @Get('opcoes')
@@ -61,7 +66,26 @@ export class RequisicaoController {
     @Body() dados: CriarRequisicaoDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    return this.requisicaoService.cadastrar(usuario.idEmpresa, dados, usuario);
+    try {
+      return await this.requisicaoService.cadastrar(usuario.idEmpresa, dados, usuario);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detalhe =
+        error instanceof Error ? error.message : 'Erro desconhecido ao cadastrar requisicao.';
+
+      this.logger.error(
+        `Erro inesperado ao cadastrar requisicao. empresa=${usuario.idEmpresa}, idOs=${dados.idOs}, itens=${dados.itens?.length ?? 0}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new InternalServerErrorException({
+        message: 'Falha inesperada ao cadastrar requisicao.',
+        detail: detalhe,
+      });
+    }
   }
 
   @Put(':idRequisicao')
@@ -71,12 +95,31 @@ export class RequisicaoController {
     @Body() dados: AtualizarRequisicaoDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    return this.requisicaoService.atualizar(
-      usuario.idEmpresa,
-      idRequisicao,
-      dados,
-      usuario,
-    );
+    try {
+      return await this.requisicaoService.atualizar(
+        usuario.idEmpresa,
+        idRequisicao,
+        dados,
+        usuario,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detalhe =
+        error instanceof Error ? error.message : 'Erro desconhecido ao atualizar requisicao.';
+
+      this.logger.error(
+        `Erro inesperado ao atualizar requisicao. empresa=${usuario.idEmpresa}, idRequisicao=${idRequisicao}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new InternalServerErrorException({
+        message: 'Falha inesperada ao atualizar requisicao.',
+        detail: detalhe,
+      });
+    }
   }
 
   private obterUsuarioAutenticado(
