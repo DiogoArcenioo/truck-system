@@ -15,7 +15,7 @@ type ItemNormalizado = {
   idProduto: number;
   qtdProduto: number;
   valorUn: number;
-  observacao: string | null;
+  observacao: string;
   usuarioAtualizacao: string;
 };
 
@@ -23,7 +23,7 @@ type PayloadCriacaoNormalizado = {
   idOs: number;
   dataRequisicao: string;
   situacao: string;
-  observacao: string | null;
+  observacao: string;
   usuarioAtualizacao: string;
   itens: ItemNormalizado[];
 };
@@ -32,7 +32,7 @@ type PayloadAtualizacaoNormalizado = {
   idOs?: number;
   dataRequisicao?: string;
   situacao?: string;
-  observacao?: string | null;
+  observacao?: string;
   usuarioAtualizacao: string;
   itens?: ItemNormalizado[];
 };
@@ -183,6 +183,9 @@ export class RequisicaoService {
         const idRequisicao = await this.obterProximoId(
           manager,
           'app.requisicao_id_requisicao_seq',
+          'app.requisicao',
+          'id_requisicao',
+          idEmpresa,
         );
 
         await manager.query(
@@ -335,6 +338,9 @@ export class RequisicaoService {
       const idItem = await this.obterProximoId(
         manager,
         'app.requisicao_itens_id_item_seq',
+        'app.requisicao_itens',
+        'id_item',
+        idEmpresa,
       );
 
       await manager.query(
@@ -595,7 +601,7 @@ export class RequisicaoService {
         ? this.normalizarDataHora(dados.dataRequisicao, 'dataRequisicao')
         : new Date().toISOString(),
       situacao: dados.situacao ?? 'A',
-      observacao: this.normalizarTextoOpcional(dados.observacao),
+      observacao: this.normalizarTextoOpcional(dados.observacao) ?? '',
       usuarioAtualizacao,
       itens: this.normalizarItens(dados.itens, usuarioAtualizacao),
     };
@@ -619,7 +625,7 @@ export class RequisicaoService {
       situacao: dados.situacao,
       observacao:
         dados.observacao !== undefined
-          ? this.normalizarTextoOpcional(dados.observacao)
+          ? (this.normalizarTextoOpcional(dados.observacao) ?? '')
           : undefined,
       usuarioAtualizacao,
       itens:
@@ -654,11 +660,13 @@ export class RequisicaoService {
         throw new BadRequestException(`Item ${index + 1}: valorUn invalido.`);
       }
 
+      const observacaoNormalizada = this.normalizarTextoOpcional(item.observacao);
+
       return {
         idProduto,
         qtdProduto: Number(qtdProduto.toFixed(3)),
         valorUn: Number(valorUn.toFixed(4)),
-        observacao: this.normalizarTextoOpcional(item.observacao),
+        observacao: observacaoNormalizada ?? '',
         usuarioAtualizacao: item.usuarioAtualizacao
           ? this.normalizarTexto(item.usuarioAtualizacao, `item[${index}].usuarioAtualizacao`)
           : usuarioPadrao,
@@ -762,10 +770,35 @@ export class RequisicaoService {
   private async obterProximoId(
     manager: EntityManager,
     sequence: string,
+    tabela: string,
+    coluna: string,
+    idEmpresa: number,
   ): Promise<number> {
-    const rows = (await manager.query(
-      `SELECT nextval('${sequence}')::bigint AS id`,
-    )) as Array<{ id?: string | number }>;
+    let rows: Array<{ id?: string | number }> = [];
+
+    try {
+      rows = (await manager.query(
+        `SELECT nextval('${sequence}')::bigint AS id`,
+      )) as Array<{ id?: string | number }>;
+    } catch (error) {
+      const erroPg =
+        error instanceof QueryFailedError
+          ? (error.driverError as { code?: string })
+          : undefined;
+
+      if (erroPg?.code !== '42P01') {
+        throw error;
+      }
+
+      rows = (await manager.query(
+        `
+          SELECT COALESCE(MAX(${coluna}), 0)::bigint + 1 AS id
+          FROM ${tabela}
+          WHERE id_empresa = $1
+        `,
+        [String(idEmpresa)],
+      )) as Array<{ id?: string | number }>;
+    }
 
     const id = Number(rows[0]?.id ?? 0);
     if (!Number.isFinite(id) || id <= 0) {
@@ -807,6 +840,12 @@ export class RequisicaoService {
 
       if (erroPg.code === '22P02' || erroPg.code === '22007') {
         throw new BadRequestException('Formato de numero ou data invalido.');
+      }
+
+      if (erroPg.code === '23502') {
+        throw new BadRequestException(
+          'Campos obrigatorios nao foram informados para cadastrar/atualizar a requisicao.',
+        );
       }
     }
 
