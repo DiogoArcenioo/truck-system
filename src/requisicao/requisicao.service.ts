@@ -180,36 +180,10 @@ export class RequisicaoService {
         await this.validarOrdemServicoExiste(manager, idEmpresa, payload.idOs);
         await this.validarProdutosInformados(manager, idEmpresa, payload.itens);
 
-        const idRequisicao = await this.obterProximoId(
+        const idRequisicao = await this.inserirCabecalhoRequisicao(
           manager,
-          'app.requisicao_id_requisicao_seq',
-          'app.requisicao',
-          'id_requisicao',
           idEmpresa,
-        );
-
-        await manager.query(
-          `
-            INSERT INTO app.requisicao (
-              id_requisicao,
-              id_os,
-              data_requisicao,
-              situacao,
-              observacao,
-              usuario_atualizacao,
-              id_empresa
-            )
-            VALUES ($1,$2,$3,$4,$5,$6,$7)
-          `,
-          [
-            idRequisicao,
-            payload.idOs,
-            payload.dataRequisicao,
-            payload.situacao,
-            payload.observacao,
-            payload.usuarioAtualizacao,
-            String(idEmpresa),
-          ],
+          payload,
         );
 
         await this.substituirItensDaRequisicao(
@@ -335,6 +309,104 @@ export class RequisicaoService {
     );
 
     for (const item of itens) {
+      await this.inserirItemRequisicao(
+        manager,
+        idEmpresa,
+        idRequisicao,
+        item,
+      );
+    }
+  }
+
+  private async inserirCabecalhoRequisicao(
+    manager: EntityManager,
+    idEmpresa: number,
+    payload: PayloadCriacaoNormalizado,
+  ): Promise<number> {
+    try {
+      const idRequisicao = await this.obterProximoId(
+        manager,
+        'app.requisicao_id_requisicao_seq',
+        'app.requisicao',
+        'id_requisicao',
+        idEmpresa,
+      );
+
+      const rows = (await manager.query(
+        `
+          INSERT INTO app.requisicao (
+            id_requisicao,
+            id_os,
+            data_requisicao,
+            situacao,
+            observacao,
+            usuario_atualizacao,
+            id_empresa
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7)
+          RETURNING id_requisicao
+        `,
+        [
+          idRequisicao,
+          payload.idOs,
+          payload.dataRequisicao,
+          payload.situacao,
+          payload.observacao,
+          payload.usuarioAtualizacao,
+          String(idEmpresa),
+        ],
+      )) as Array<{ id_requisicao?: string | number }>;
+
+      const idGerado = this.converterNumero(rows[0]?.id_requisicao);
+      if (!idGerado || idGerado <= 0) {
+        throw new BadRequestException('Nao foi possivel obter o id da requisicao cadastrada.');
+      }
+
+      return idGerado;
+    } catch (error) {
+      if (!this.ehErroIdentityAlways(error)) {
+        throw error;
+      }
+    }
+
+    const rows = (await manager.query(
+      `
+        INSERT INTO app.requisicao (
+          id_os,
+          data_requisicao,
+          situacao,
+          observacao,
+          usuario_atualizacao,
+          id_empresa
+        )
+        VALUES ($1,$2,$3,$4,$5,$6)
+        RETURNING id_requisicao
+      `,
+      [
+        payload.idOs,
+        payload.dataRequisicao,
+        payload.situacao,
+        payload.observacao,
+        payload.usuarioAtualizacao,
+        String(idEmpresa),
+      ],
+    )) as Array<{ id_requisicao?: string | number }>;
+
+    const idGerado = this.converterNumero(rows[0]?.id_requisicao);
+    if (!idGerado || idGerado <= 0) {
+      throw new BadRequestException('Nao foi possivel obter o id da requisicao cadastrada.');
+    }
+
+    return idGerado;
+  }
+
+  private async inserirItemRequisicao(
+    manager: EntityManager,
+    idEmpresa: number,
+    idRequisicao: number,
+    item: ItemNormalizado,
+  ) {
+    try {
       const idItem = await this.obterProximoId(
         manager,
         'app.requisicao_itens_id_item_seq',
@@ -368,7 +440,36 @@ export class RequisicaoService {
           String(idEmpresa),
         ],
       );
+      return;
+    } catch (error) {
+      if (!this.ehErroIdentityAlways(error)) {
+        throw error;
+      }
     }
+
+    await manager.query(
+      `
+        INSERT INTO app.requisicao_itens (
+          id_requisicao,
+          id_produto,
+          qtd_produto,
+          valor_un,
+          observacao,
+          usuario_atualizacao,
+          id_empresa
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `,
+      [
+        idRequisicao,
+        item.idProduto,
+        item.qtdProduto,
+        item.valorUn,
+        item.observacao,
+        item.usuarioAtualizacao,
+        String(idEmpresa),
+      ],
+    );
   }
 
   private async buscarPorIdInterno(
@@ -808,6 +909,15 @@ export class RequisicaoService {
     return id;
   }
 
+  private ehErroIdentityAlways(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+
+    const erroPg = error.driverError as { code?: string };
+    return erroPg.code === '428C9';
+  }
+
   private async executarComRls<T>(
     idEmpresa: number,
     callback: (manager: EntityManager) => Promise<T>,
@@ -851,6 +961,12 @@ export class RequisicaoService {
       if (erroPg.code === '42501') {
         throw new BadRequestException(
           'Permissao insuficiente no banco (RLS/sequence). Verifique policy da empresa e grants.',
+        );
+      }
+
+      if (erroPg.code === '428C9') {
+        throw new BadRequestException(
+          'Coluna identity GENERATED ALWAYS exige insercao sem id manual.',
         );
       }
     }
