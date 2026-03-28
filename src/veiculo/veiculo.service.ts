@@ -415,14 +415,18 @@ export class VeiculoService {
 
         const adicionarCampoOpcional = (
           coluna: string | null,
-          campoApi: string,
+          _campoApi: string,
           valor: string | number | null | undefined,
         ) => {
           if (valor === undefined) {
             return;
           }
 
-          campos.push(this.exigirColuna(coluna, campoApi));
+          if (!coluna) {
+            return;
+          }
+
+          campos.push(coluna);
           valores.push(valor);
         };
 
@@ -546,16 +550,19 @@ export class VeiculoService {
 
         const adicionarSetOpcional = (
           coluna: string | null,
-          campoApi: string,
+          _campoApi: string,
           valor: string | number | null | undefined,
         ) => {
           if (valor === undefined) {
             return;
           }
 
-          const colunaReal = this.exigirColuna(coluna, campoApi);
+          if (!coluna) {
+            return;
+          }
+
           valores.push(valor);
-          sets.push(`${this.quote(colunaReal)} = $${valores.length}`);
+          sets.push(`${this.quote(coluna)} = $${valores.length}`);
         };
 
         adicionarSetOpcional(
