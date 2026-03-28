@@ -1,8 +1,8 @@
-import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity({ schema: 'app', name: 'motoristas' })
 export class MotoristaEntity {
-  @PrimaryColumn({ type: 'integer', name: 'id_motorista' })
+  @PrimaryGeneratedColumn({ type: 'integer', name: 'id_motorista' })
   idMotorista!: number;
 
   @Column({ type: 'character varying', name: 'nome' })

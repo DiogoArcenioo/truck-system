@@ -107,11 +107,8 @@ export class MotoristasService {
     _usuarioJwt: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (motoristaRepository, manager) => {
-        const idMotorista = await this.obterProximoIdMotorista(manager);
-
+      return await this.executarComRls(idEmpresa, async (motoristaRepository) => {
         const novo = motoristaRepository.create({
-          idMotorista,
           idEmpresa: String(idEmpresa),
           nome: this.normalizarTexto(dados.nome),
           cpf: dados.cpf,
@@ -141,7 +138,7 @@ export class MotoristasService {
     _usuarioJwt: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (motoristaRepository) => {
+      return await this.executarComRls(idEmpresa, async (motoristaRepository) => {
         const motorista = await motoristaRepository.findOne({
           where: { idEmpresa: String(idEmpresa), idMotorista },
         });
@@ -300,36 +297,13 @@ export class MotoristasService {
     return 'nome';
   }
 
-  private async obterProximoIdMotorista(manager: EntityManager): Promise<number> {
-    try {
-      const rows = (await manager.query(
-        "SELECT nextval(pg_get_serial_sequence('app.motoristas','id_motorista'))::int AS id",
-      )) as Array<{ id?: number }>;
-
-      const id = Number(rows[0]?.id ?? 0);
-      if (Number.isFinite(id) && id > 0) {
-        return id;
-      }
-    } catch {
-      // fallback por max(id)+1 quando a sequence nao estiver disponivel
-    }
-
-    const rows = (await manager.query(
-      'SELECT COALESCE(MAX(id_motorista), 0)::int + 1 AS id FROM app.motoristas',
-    )) as Array<{ id?: number }>;
-
-    const id = Number(rows[0]?.id ?? 0);
-    if (!Number.isFinite(id) || id <= 0) {
-      throw new BadRequestException(
-        'Nao foi possivel determinar o proximo id de motorista.',
-      );
-    }
-
-    return id;
-  }
-
   private normalizarTexto(valor: string): string {
-    return valor.trim().toUpperCase();
+    const texto = valor.trim().toUpperCase();
+    if (!texto) {
+      throw new BadRequestException('Texto invalido informado para motorista.');
+    }
+
+    return texto;
   }
 
   private normalizarData(valor: string): string {
@@ -370,7 +344,11 @@ export class MotoristasService {
     }
 
     if (error instanceof QueryFailedError) {
-      const erroPg = error.driverError as { code?: string };
+      const erroPg = error.driverError as {
+        code?: string;
+        detail?: string;
+        message?: string;
+      };
 
       if (erroPg.code === '23505') {
         throw new BadRequestException(
@@ -384,6 +362,46 @@ export class MotoristasService {
 
       if (erroPg.code === '42P01') {
         throw new BadRequestException('Tabela app.motoristas nao encontrada.');
+      }
+
+      if (erroPg.code === '23502') {
+        throw new BadRequestException(
+          'Campos obrigatorios nao foram informados para cadastrar/atualizar motorista.',
+        );
+      }
+
+      if (erroPg.code === '42501') {
+        throw new BadRequestException(
+          'Permissao insuficiente no banco (RLS/sequence). Verifique policy da empresa e grants.',
+        );
+      }
+
+      if (erroPg.code === '428C9') {
+        throw new BadRequestException(
+          'A API tentou inserir valor em coluna identity GENERATED ALWAYS. IDs auto incremento nao devem ser enviados no INSERT.',
+        );
+      }
+
+      if (erroPg.code === '42703') {
+        throw new BadRequestException(
+          'Erro de estrutura no banco (coluna inexistente em SQL/trigger/function).',
+        );
+      }
+
+      if (erroPg.code === '25P02') {
+        throw new BadRequestException(
+          'Transacao abortada no banco por erro SQL anterior. Verifique triggers/funcoes e o primeiro erro no log do banco.',
+        );
+      }
+
+      const detalhe = [erroPg.code, erroPg.detail ?? erroPg.message]
+        .filter((parte): parte is string => Boolean(parte))
+        .join(' - ');
+
+      if (detalhe) {
+        throw new BadRequestException(
+          `Falha ao ${acao} motorista no banco: ${detalhe}.`,
+        );
       }
     }
 

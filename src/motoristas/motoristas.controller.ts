@@ -2,6 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  HttpException,
+  InternalServerErrorException,
+  Logger,
   Param,
   ParseIntPipe,
   Post,
@@ -12,6 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
+import { QueryFailedError } from 'typeorm';
 import { AtualizarMotoristaDto } from './dto/atualizar-motorista.dto';
 import { CriarMotoristaDto } from './dto/criar-motorista.dto';
 import { FiltroMotoristasDto } from './dto/filtro-motoristas.dto';
@@ -24,6 +28,8 @@ type RequisicaoAutenticada = {
 @Controller('api/motoristas')
 @UseGuards(JwtAuthGuard)
 export class MotoristasController {
+  private readonly logger = new Logger(MotoristasController.name);
+
   constructor(private readonly motoristasService: MotoristasService) {}
 
   @Get('opcoes')
@@ -61,7 +67,27 @@ export class MotoristasController {
     @Body() dados: CriarMotoristaDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    return this.motoristasService.cadastrar(usuario.idEmpresa, dados, usuario);
+    try {
+      return await this.motoristasService.cadastrar(
+        usuario.idEmpresa,
+        dados,
+        usuario,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detalhe = this.descreverErro(error);
+      this.logger.error(
+        `Erro inesperado ao cadastrar motorista. empresa=${usuario.idEmpresa}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new InternalServerErrorException(
+        `Falha inesperada ao cadastrar motorista. DEBUG: ${detalhe}`,
+      );
+    }
   }
 
   @Put(':idMotorista')
@@ -71,12 +97,28 @@ export class MotoristasController {
     @Body() dados: AtualizarMotoristaDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    return this.motoristasService.atualizar(
-      usuario.idEmpresa,
-      idMotorista,
-      dados,
-      usuario,
-    );
+    try {
+      return await this.motoristasService.atualizar(
+        usuario.idEmpresa,
+        idMotorista,
+        dados,
+        usuario,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detalhe = this.descreverErro(error);
+      this.logger.error(
+        `Erro inesperado ao atualizar motorista. empresa=${usuario.idEmpresa}, idMotorista=${idMotorista}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new InternalServerErrorException(
+        `Falha inesperada ao atualizar motorista. DEBUG: ${detalhe}`,
+      );
+    }
   }
 
   private obterUsuarioAutenticado(
@@ -87,5 +129,26 @@ export class MotoristasController {
     }
 
     return request.usuario;
+  }
+
+  private descreverErro(error: unknown): string {
+    if (error instanceof QueryFailedError) {
+      const erroPg = error.driverError as {
+        code?: string;
+        detail?: string;
+        message?: string;
+      };
+      return `QueryFailedError code=${erroPg.code ?? 'N/A'} detail=${erroPg.detail ?? erroPg.message ?? 'N/A'}`;
+    }
+
+    if (error instanceof Error) {
+      return `${error.name}: ${error.message}`;
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
   }
 }
