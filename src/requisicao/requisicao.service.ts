@@ -786,7 +786,7 @@ export class RequisicaoService {
           ? (error.driverError as { code?: string })
           : undefined;
 
-      if (erroPg?.code !== '42P01') {
+      if (erroPg?.code !== '42P01' && erroPg?.code !== '42501') {
         throw error;
       }
 
@@ -845,6 +845,12 @@ export class RequisicaoService {
       if (erroPg.code === '23502') {
         throw new BadRequestException(
           'Campos obrigatorios nao foram informados para cadastrar/atualizar a requisicao.',
+        );
+      }
+
+      if (erroPg.code === '42501') {
+        throw new BadRequestException(
+          'Permissao insuficiente no banco (RLS/sequence). Verifique policy da empresa e grants.',
         );
       }
     }

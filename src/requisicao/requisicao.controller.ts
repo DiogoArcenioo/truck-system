@@ -15,6 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
+import { QueryFailedError } from 'typeorm';
 import { AtualizarRequisicaoDto } from './dto/atualizar-requisicao.dto';
 import { CriarRequisicaoDto } from './dto/criar-requisicao.dto';
 import { FiltroRequisicaoDto } from './dto/filtro-requisicao.dto';
@@ -73,18 +74,16 @@ export class RequisicaoController {
         throw error;
       }
 
-      const detalhe =
-        error instanceof Error ? error.message : 'Erro desconhecido ao cadastrar requisicao.';
+      const detalhe = this.descreverErro(error);
 
       this.logger.error(
         `Erro inesperado ao cadastrar requisicao. empresa=${usuario.idEmpresa}, idOs=${dados.idOs}, itens=${dados.itens?.length ?? 0}`,
         error instanceof Error ? error.stack : undefined,
       );
 
-      throw new InternalServerErrorException({
-        message: 'Falha inesperada ao cadastrar requisicao.',
-        detail: detalhe,
-      });
+      throw new InternalServerErrorException(
+        `Falha inesperada ao cadastrar requisicao. DEBUG: ${detalhe}`,
+      );
     }
   }
 
@@ -107,18 +106,16 @@ export class RequisicaoController {
         throw error;
       }
 
-      const detalhe =
-        error instanceof Error ? error.message : 'Erro desconhecido ao atualizar requisicao.';
+      const detalhe = this.descreverErro(error);
 
       this.logger.error(
         `Erro inesperado ao atualizar requisicao. empresa=${usuario.idEmpresa}, idRequisicao=${idRequisicao}`,
         error instanceof Error ? error.stack : undefined,
       );
 
-      throw new InternalServerErrorException({
-        message: 'Falha inesperada ao atualizar requisicao.',
-        detail: detalhe,
-      });
+      throw new InternalServerErrorException(
+        `Falha inesperada ao atualizar requisicao. DEBUG: ${detalhe}`,
+      );
     }
   }
 
@@ -130,5 +127,26 @@ export class RequisicaoController {
     }
 
     return request.usuario;
+  }
+
+  private descreverErro(error: unknown): string {
+    if (error instanceof QueryFailedError) {
+      const erroPg = error.driverError as {
+        code?: string;
+        detail?: string;
+        message?: string;
+      };
+      return `QueryFailedError code=${erroPg.code ?? 'N/A'} detail=${erroPg.detail ?? erroPg.message ?? 'N/A'}`;
+    }
+
+    if (error instanceof Error) {
+      return `${error.name}: ${error.message}`;
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
   }
 }
