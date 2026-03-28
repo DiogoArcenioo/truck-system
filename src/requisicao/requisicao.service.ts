@@ -174,7 +174,7 @@ export class RequisicaoService {
     usuarioJwt: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const payload = this.normalizarCriacao(dados, usuarioJwt);
 
         await this.validarOrdemServicoExiste(manager, idEmpresa, payload.idOs);
@@ -217,7 +217,7 @@ export class RequisicaoService {
     usuarioJwt: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const atual = await this.buscarRegistroPorIdOuFalhar(
           manager,
           idEmpresa,
@@ -323,52 +323,6 @@ export class RequisicaoService {
     idEmpresa: number,
     payload: PayloadCriacaoNormalizado,
   ): Promise<number> {
-    try {
-      const idRequisicao = await this.obterProximoId(
-        manager,
-        'app.requisicao_id_requisicao_seq',
-        'app.requisicao',
-        'id_requisicao',
-        idEmpresa,
-      );
-
-      const rows = (await manager.query(
-        `
-          INSERT INTO app.requisicao (
-            id_requisicao,
-            id_os,
-            data_requisicao,
-            situacao,
-            observacao,
-            usuario_atualizacao,
-            id_empresa
-          )
-          VALUES ($1,$2,$3,$4,$5,$6,$7)
-          RETURNING id_requisicao
-        `,
-        [
-          idRequisicao,
-          payload.idOs,
-          payload.dataRequisicao,
-          payload.situacao,
-          payload.observacao,
-          payload.usuarioAtualizacao,
-          String(idEmpresa),
-        ],
-      )) as Array<{ id_requisicao?: string | number }>;
-
-      const idGerado = this.converterNumero(rows[0]?.id_requisicao);
-      if (!idGerado || idGerado <= 0) {
-        throw new BadRequestException('Nao foi possivel obter o id da requisicao cadastrada.');
-      }
-
-      return idGerado;
-    } catch (error) {
-      if (!this.ehErroIdentityAlways(error)) {
-        throw error;
-      }
-    }
-
     const rows = (await manager.query(
       `
         INSERT INTO app.requisicao (
@@ -406,47 +360,6 @@ export class RequisicaoService {
     idRequisicao: number,
     item: ItemNormalizado,
   ) {
-    try {
-      const idItem = await this.obterProximoId(
-        manager,
-        'app.requisicao_itens_id_item_seq',
-        'app.requisicao_itens',
-        'id_item',
-        idEmpresa,
-      );
-
-      await manager.query(
-        `
-          INSERT INTO app.requisicao_itens (
-            id_item,
-            id_requisicao,
-            id_produto,
-            qtd_produto,
-            valor_un,
-            observacao,
-            usuario_atualizacao,
-            id_empresa
-          )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-        `,
-        [
-          idItem,
-          idRequisicao,
-          item.idProduto,
-          item.qtdProduto,
-          item.valorUn,
-          item.observacao,
-          item.usuarioAtualizacao,
-          String(idEmpresa),
-        ],
-      );
-      return;
-    } catch (error) {
-      if (!this.ehErroIdentityAlways(error)) {
-        throw error;
-      }
-    }
-
     await manager.query(
       `
         INSERT INTO app.requisicao_itens (
@@ -868,56 +781,6 @@ export class RequisicaoService {
     return Number.isNaN(data.getTime()) ? null : data.toISOString();
   }
 
-  private async obterProximoId(
-    manager: EntityManager,
-    sequence: string,
-    tabela: string,
-    coluna: string,
-    idEmpresa: number,
-  ): Promise<number> {
-    let rows: Array<{ id?: string | number }> = [];
-
-    try {
-      rows = (await manager.query(
-        `SELECT nextval('${sequence}')::bigint AS id`,
-      )) as Array<{ id?: string | number }>;
-    } catch (error) {
-      const erroPg =
-        error instanceof QueryFailedError
-          ? (error.driverError as { code?: string })
-          : undefined;
-
-      if (erroPg?.code !== '42P01' && erroPg?.code !== '42501') {
-        throw error;
-      }
-
-      rows = (await manager.query(
-        `
-          SELECT COALESCE(MAX(${coluna}), 0)::bigint + 1 AS id
-          FROM ${tabela}
-          WHERE id_empresa = $1
-        `,
-        [String(idEmpresa)],
-      )) as Array<{ id?: string | number }>;
-    }
-
-    const id = Number(rows[0]?.id ?? 0);
-    if (!Number.isFinite(id) || id <= 0) {
-      throw new BadRequestException(`Nao foi possivel gerar id para ${sequence}.`);
-    }
-
-    return id;
-  }
-
-  private ehErroIdentityAlways(error: unknown): boolean {
-    if (!(error instanceof QueryFailedError)) {
-      return false;
-    }
-
-    const erroPg = error.driverError as { code?: string };
-    return erroPg.code === '428C9';
-  }
-
   private async executarComRls<T>(
     idEmpresa: number,
     callback: (manager: EntityManager) => Promise<T>,
@@ -934,7 +797,7 @@ export class RequisicaoService {
     }
 
     if (error instanceof QueryFailedError) {
-      const erroPg = error.driverError as { code?: string };
+      const erroPg = error.driverError as { code?: string; detail?: string; message?: string };
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
@@ -966,9 +829,32 @@ export class RequisicaoService {
 
       if (erroPg.code === '428C9') {
         throw new BadRequestException(
-          'Coluna identity GENERATED ALWAYS exige insercao sem id manual.',
+          'A API tentou inserir valor em coluna identity GENERATED ALWAYS. IDs auto incremento nao devem ser enviados no INSERT.',
         );
       }
+
+      if (erroPg.code === '42703') {
+        throw new BadRequestException(
+          'Erro de estrutura no banco (coluna inexistente em SQL/trigger/function).',
+        );
+      }
+
+      if (erroPg.code === '25P02') {
+        throw new BadRequestException(
+          'Transacao abortada no banco por erro SQL anterior. Verifique triggers/funcoes e o primeiro erro no log do banco.',
+        );
+      }
+
+      const detalhe = [erroPg.code, erroPg.detail ?? erroPg.message]
+        .filter((parte): parte is string => Boolean(parte))
+        .join(' - ');
+
+      if (detalhe) {
+        throw new BadRequestException(
+          `Falha ao ${acao} requisicao no banco: ${detalhe}.`,
+        );
+      }
+
     }
 
     throw new BadRequestException(
