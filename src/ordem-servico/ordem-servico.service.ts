@@ -5,32 +5,10 @@ import { configurarContextoEmpresaRls } from '../common/database/rls.util';
 import { AtualizarOrdemServicoDto } from './dto/atualizar-ordem-servico.dto';
 import { CriarOrdemServicoDto } from './dto/criar-ordem-servico.dto';
 import { FiltroOrdemServicoDto } from './dto/filtro-ordem-servico.dto';
-import {
-  ListarOrdemServicoDto,
-  ListarOrdemServicoItemDto,
-  ListarOrdemServicoRequisicaoDto,
-} from './dto/listar-ordem-servico.dto';
-import { ItemRequisicaoDto } from './dto/item-requisicao.dto';
-import { RequisicaoOrdemServicoDto } from './dto/requisicao-ordem-servico.dto';
+import { ListarOrdemServicoDto } from './dto/listar-ordem-servico.dto';
 import { SITUACAO_OS_OPCOES, TIPO_SERVICO_OPCOES } from './ordem-servico.constants';
 
 type RegistroBanco = Record<string, unknown>;
-
-type ItemNormalizado = {
-  idProduto: number;
-  qtdProduto: number;
-  valorUn: number;
-  observacao: string | null;
-  usuarioAtualizacao: string;
-  valorTotalItem: number;
-};
-
-type RequisicaoNormalizada = {
-  dataRequisicao: string;
-  situacao: string;
-  observacao: string | null;
-  usuarioAtualizacao: string;
-};
 
 type PayloadCriacaoNormalizado = {
   idVeiculo: number;
@@ -45,8 +23,6 @@ type PayloadCriacaoNormalizado = {
   chaveNfe: string | null;
   tipoServico: string;
   usuarioAtualizacao: string;
-  requisicao?: RequisicaoNormalizada;
-  itens: ItemNormalizado[];
 };
 
 type PayloadAtualizacaoNormalizado = {
@@ -62,8 +38,6 @@ type PayloadAtualizacaoNormalizado = {
   chaveNfe?: string | null;
   tipoServico?: string;
   usuarioAtualizacao: string;
-  requisicao?: RequisicaoNormalizada;
-  itens?: ItemNormalizado[];
 };
 
 @Injectable()
@@ -82,19 +56,22 @@ export class OrdemServicoService {
     return this.executarComRls(idEmpresa, async (manager) => {
       const rows = (await manager.query(
         `
-          SELECT *
-          FROM app.ordem_servico
-          WHERE id_empresa = $1
-          ORDER BY data_cadastro DESC, id_os DESC
+          SELECT
+            os.*,
+            (
+              SELECT COUNT(1)::int
+              FROM app.requisicao req
+              WHERE req.id_empresa = os.id_empresa
+                AND req.id_os = os.id_os
+            ) AS qtd_requisicoes
+          FROM app.ordem_servico os
+          WHERE os.id_empresa = $1
+          ORDER BY os.data_cadastro DESC, os.id_os DESC
         `,
         [String(idEmpresa)],
       )) as RegistroBanco[];
 
-      const ordensServico = await this.mapearOrdensComRequisicoes(
-        manager,
-        idEmpresa,
-        rows,
-      );
+      const ordensServico = rows.map((row) => this.mapearOrdemServico(row));
 
       return {
         sucesso: true,
@@ -108,62 +85,62 @@ export class OrdemServicoService {
     this.validarIntervalosDoFiltro(filtro);
 
     return this.executarComRls(idEmpresa, async (manager) => {
-      const filtros: string[] = ['id_empresa = $1'];
+      const filtros: string[] = ['os.id_empresa = $1'];
       const valores: Array<string | number> = [String(idEmpresa)];
 
       if (filtro.idOs !== undefined) {
         valores.push(filtro.idOs);
-        filtros.push(`id_os = $${valores.length}`);
+        filtros.push(`os.id_os = $${valores.length}`);
       }
 
       if (filtro.idVeiculo !== undefined) {
         valores.push(filtro.idVeiculo);
-        filtros.push(`id_veiculo = $${valores.length}`);
+        filtros.push(`os.id_veiculo = $${valores.length}`);
       }
 
       if (filtro.idFornecedor !== undefined) {
         valores.push(filtro.idFornecedor);
-        filtros.push(`id_fornecedor = $${valores.length}`);
+        filtros.push(`os.id_fornecedor = $${valores.length}`);
       }
 
       if (filtro.situacaoOs) {
         valores.push(filtro.situacaoOs);
-        filtros.push(`situacao_os = $${valores.length}`);
+        filtros.push(`os.situacao_os = $${valores.length}`);
       }
 
       if (filtro.tipoServico) {
         valores.push(filtro.tipoServico);
-        filtros.push(`tipo_servico = $${valores.length}::app.tipo_servico_enum`);
+        filtros.push(`os.tipo_servico = $${valores.length}::app.tipo_servico_enum`);
       }
 
       if (filtro.dataCadastroDe) {
         valores.push(this.normalizarDataHora(filtro.dataCadastroDe, 'dataCadastroDe'));
-        filtros.push(`data_cadastro >= $${valores.length}`);
+        filtros.push(`os.data_cadastro >= $${valores.length}`);
       }
 
       if (filtro.dataCadastroAte) {
         valores.push(this.normalizarDataHora(filtro.dataCadastroAte, 'dataCadastroAte'));
-        filtros.push(`data_cadastro <= $${valores.length}`);
+        filtros.push(`os.data_cadastro <= $${valores.length}`);
       }
 
       if (filtro.dataFechamentoDe) {
         valores.push(
           this.normalizarDataHora(filtro.dataFechamentoDe, 'dataFechamentoDe'),
         );
-        filtros.push(`data_fechamento >= $${valores.length}`);
+        filtros.push(`os.data_fechamento >= $${valores.length}`);
       }
 
       if (filtro.dataFechamentoAte) {
         valores.push(
           this.normalizarDataHora(filtro.dataFechamentoAte, 'dataFechamentoAte'),
         );
-        filtros.push(`data_fechamento <= $${valores.length}`);
+        filtros.push(`os.data_fechamento <= $${valores.length}`);
       }
 
       if (filtro.texto?.trim()) {
         valores.push(`%${filtro.texto.trim().toUpperCase()}%`);
         filtros.push(
-          `(CAST(id_os AS TEXT) LIKE $${valores.length} OR UPPER(COALESCE(observacao, '')) LIKE $${valores.length} OR UPPER(COALESCE(chave_nfe, '')) LIKE $${valores.length} OR UPPER(COALESCE(usuario_atualizacao, '')) LIKE $${valores.length})`,
+          `(CAST(os.id_os AS TEXT) LIKE $${valores.length} OR UPPER(COALESCE(os.observacao, '')) LIKE $${valores.length} OR UPPER(COALESCE(os.chave_nfe, '')) LIKE $${valores.length} OR UPPER(COALESCE(os.usuario_atualizacao, '')) LIKE $${valores.length})`,
         );
       }
 
@@ -176,15 +153,22 @@ export class OrdemServicoService {
 
       const sqlCount = `
         SELECT COUNT(1)::int AS total
-        FROM app.ordem_servico
+        FROM app.ordem_servico os
         ${whereSql}
       `;
 
       const sqlDados = `
-        SELECT *
-        FROM app.ordem_servico
+        SELECT
+          os.*,
+          (
+            SELECT COUNT(1)::int
+            FROM app.requisicao req
+            WHERE req.id_empresa = os.id_empresa
+              AND req.id_os = os.id_os
+          ) AS qtd_requisicoes
+        FROM app.ordem_servico os
         ${whereSql}
-        ORDER BY ${colunaOrdenacao} ${ordem}, id_os DESC
+        ORDER BY os.${colunaOrdenacao} ${ordem}, os.id_os DESC
         LIMIT $${valores.length + 1}
         OFFSET $${valores.length + 2}
       `;
@@ -197,11 +181,7 @@ export class OrdemServicoService {
       ]);
 
       const total = Number(countRows[0]?.total ?? 0);
-      const ordensServico = await this.mapearOrdensComRequisicoes(
-        manager,
-        idEmpresa,
-        rows,
-      );
+      const ordensServico = rows.map((row) => this.mapearOrdemServico(row));
 
       return {
         sucesso: true,
@@ -232,14 +212,9 @@ export class OrdemServicoService {
     try {
       return this.executarComRls(idEmpresa, async (manager) => {
         const payload = this.normalizarCriacao(dados, usuarioJwt);
-
-        if (payload.itens.length > 0) {
-          await this.validarProdutosInformados(manager, idEmpresa, payload.itens);
-        }
-
         const idOs = await this.obterProximoId(manager, 'app.ordem_servico_id_os_seq');
 
-        await manager.query(
+        const rows = (await manager.query(
           `
             INSERT INTO app.ordem_servico (
               id_os,
@@ -259,6 +234,7 @@ export class OrdemServicoService {
               id_empresa
             )
             VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12,$13,$14)
+            RETURNING *
           `,
           [
             idOs,
@@ -276,23 +252,17 @@ export class OrdemServicoService {
             payload.tipoServico,
             String(idEmpresa),
           ],
-        );
+        )) as RegistroBanco[];
 
-        await this.persistirRequisicaoEItens(
-          manager,
-          idEmpresa,
-          idOs,
-          payload.requisicao,
-          payload.itens,
-          payload.usuarioAtualizacao,
-        );
-
-        const ordemServico = await this.buscarPorIdInterno(manager, idEmpresa, idOs);
+        const row = rows[0];
+        if (!row) {
+          throw new BadRequestException('Falha ao cadastrar ordem de servico.');
+        }
 
         return {
           sucesso: true,
           mensagem: 'Ordem de servico cadastrada com sucesso.',
-          ordemServico,
+          ordemServico: this.mapearOrdemServico(row),
         };
       });
     } catch (error) {
@@ -308,12 +278,8 @@ export class OrdemServicoService {
   ) {
     try {
       return this.executarComRls(idEmpresa, async (manager) => {
-        const atual = await this.buscarRegistroOrdemOuFalhar(manager, idEmpresa, idOs);
+        const atual = await this.buscarRegistroPorIdOuFalhar(manager, idEmpresa, idOs);
         const payload = this.normalizarAtualizacao(dados, usuarioJwt);
-
-        if (payload.itens !== undefined && payload.itens.length > 0) {
-          await this.validarProdutosInformados(manager, idEmpresa, payload.itens);
-        }
 
         const dataCadastro =
           payload.dataCadastro ??
@@ -326,42 +292,8 @@ export class OrdemServicoService {
         const tempoOsMin =
           payload.tempoOsMin !== undefined
             ? payload.tempoOsMin
-            : this.converterNumero(atual.tempo_os_min);
-        const situacaoOs =
-          payload.situacaoOs ??
-          this.converterTexto(atual.situacao_os)?.trim().toUpperCase() ??
-          'A';
-        const observacao =
-          payload.observacao !== undefined
-            ? payload.observacao
-            : this.converterTexto(atual.observacao);
-        const valorTotalAtual = this.converterNumero(atual.valor_total) ?? 0;
-        const valorTotal =
-          payload.valorTotal !== undefined
-            ? payload.valorTotal
-            : payload.itens !== undefined
-              ? this.calcularValorTotalItens(payload.itens)
-              : valorTotalAtual;
-        const kmVeiculo =
-          payload.kmVeiculo !== undefined
-            ? payload.kmVeiculo
-            : this.converterNumero(atual.km_veiculo);
-        const idVeiculo = payload.idVeiculo ?? this.converterNumero(atual.id_veiculo) ?? 0;
-        const idFornecedor =
-          payload.idFornecedor !== undefined
-            ? payload.idFornecedor
-            : this.converterNumero(atual.id_fornecedor);
-        const chaveNfe =
-          payload.chaveNfe !== undefined
-            ? payload.chaveNfe
-            : this.converterTexto(atual.chave_nfe);
-        const tipoServico =
-          payload.tipoServico ??
-          this.converterTexto(atual.tipo_servico)?.trim().toUpperCase() ??
-          'C';
-
-        const tempoFinal =
-          tempoOsMin ?? this.calcularTempoMinutos(dataCadastro, dataFechamento);
+            : this.converterNumero(atual.tempo_os_min) ??
+              this.calcularTempoMinutos(dataCadastro, dataFechamento);
 
         const rows = (await manager.query(
           `
@@ -386,18 +318,32 @@ export class OrdemServicoService {
             RETURNING *
           `,
           [
-            idVeiculo,
-            idFornecedor,
+            payload.idVeiculo ?? this.converterNumero(atual.id_veiculo) ?? 0,
+            payload.idFornecedor !== undefined
+              ? payload.idFornecedor
+              : this.converterNumero(atual.id_fornecedor),
             dataCadastro,
             dataFechamento,
-            tempoFinal,
-            situacaoOs,
-            observacao,
-            valorTotal,
-            kmVeiculo,
-            chaveNfe,
+            tempoOsMin,
+            payload.situacaoOs ??
+              this.converterTexto(atual.situacao_os)?.toUpperCase() ??
+              'A',
+            payload.observacao !== undefined
+              ? payload.observacao
+              : this.converterTexto(atual.observacao),
+            payload.valorTotal !== undefined
+              ? payload.valorTotal
+              : this.converterNumero(atual.valor_total) ?? 0,
+            payload.kmVeiculo !== undefined
+              ? payload.kmVeiculo
+              : this.converterNumero(atual.km_veiculo),
+            payload.chaveNfe !== undefined
+              ? payload.chaveNfe
+              : this.converterTexto(atual.chave_nfe),
             payload.usuarioAtualizacao,
-            tipoServico,
+            payload.tipoServico ??
+              this.converterTexto(atual.tipo_servico)?.toUpperCase() ??
+              'C',
             String(idEmpresa),
             idOs,
           ],
@@ -408,148 +354,14 @@ export class OrdemServicoService {
           throw new NotFoundException('Ordem de servico nao encontrada para a empresa logada.');
         }
 
-        if (payload.requisicao !== undefined || payload.itens !== undefined) {
-          await this.persistirRequisicaoEItens(
-            manager,
-            idEmpresa,
-            idOs,
-            payload.requisicao,
-            payload.itens,
-            payload.usuarioAtualizacao,
-          );
-        }
-
-        const ordemServico = await this.buscarPorIdInterno(manager, idEmpresa, idOs);
-
         return {
           sucesso: true,
           mensagem: 'Ordem de servico atualizada com sucesso.',
-          ordemServico,
+          ordemServico: this.mapearOrdemServico(row),
         };
       });
     } catch (error) {
       this.tratarErroPersistencia(error, 'atualizar');
-    }
-  }
-
-  private async persistirRequisicaoEItens(
-    manager: EntityManager,
-    idEmpresa: number,
-    idOs: number,
-    requisicao: RequisicaoNormalizada | undefined,
-    itens: ItemNormalizado[] | undefined,
-    usuarioPadrao: string,
-  ) {
-    const existeEntrada = requisicao !== undefined || itens !== undefined;
-    if (!existeEntrada) {
-      return;
-    }
-
-    const requisicaoAtual = await this.buscarRequisicaoMaisRecente(manager, idEmpresa, idOs);
-    let idRequisicao = this.converterNumero(requisicaoAtual?.id_requisicao);
-
-    if (idRequisicao === null) {
-      idRequisicao = await this.obterProximoId(
-        manager,
-        'app.requisicao_id_requisicao_seq',
-      );
-
-      const base = requisicao ?? {
-        dataRequisicao: new Date().toISOString(),
-        situacao: 'A',
-        observacao: null,
-        usuarioAtualizacao: usuarioPadrao,
-      };
-
-      await manager.query(
-        `
-          INSERT INTO app.requisicao (
-            id_requisicao,
-            id_os,
-            data_requisicao,
-            situacao,
-            observacao,
-            usuario_atualizacao,
-            id_empresa
-          )
-          VALUES ($1,$2,$3,$4,$5,$6,$7)
-        `,
-        [
-          idRequisicao,
-          idOs,
-          base.dataRequisicao,
-          base.situacao,
-          base.observacao,
-          base.usuarioAtualizacao,
-          String(idEmpresa),
-        ],
-      );
-    } else if (requisicao !== undefined) {
-      await manager.query(
-        `
-          UPDATE app.requisicao
-          SET
-            data_requisicao = $1,
-            situacao = $2,
-            observacao = $3,
-            usuario_atualizacao = $4,
-            atualizado_em = NOW()
-          WHERE id_empresa = $5
-            AND id_requisicao = $6
-        `,
-        [
-          requisicao.dataRequisicao,
-          requisicao.situacao,
-          requisicao.observacao,
-          requisicao.usuarioAtualizacao,
-          String(idEmpresa),
-          idRequisicao,
-        ],
-      );
-    }
-
-    if (itens !== undefined) {
-      await manager.query(
-        `
-          DELETE FROM app.requisicao_itens
-          WHERE id_empresa = $1
-            AND id_requisicao = $2
-        `,
-        [String(idEmpresa), idRequisicao],
-      );
-
-      for (const item of itens) {
-        const idItem = await this.obterProximoId(
-          manager,
-          'app.requisicao_itens_id_item_seq',
-        );
-
-        await manager.query(
-          `
-            INSERT INTO app.requisicao_itens (
-              id_item,
-              id_requisicao,
-              id_produto,
-              qtd_produto,
-              valor_un,
-              observacao,
-              usuario_atualizacao,
-              id_empresa
-            )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-          `,
-          [
-            idItem,
-            idRequisicao,
-            item.idProduto,
-            item.qtdProduto,
-            item.valorUn,
-            item.observacao,
-            item.usuarioAtualizacao,
-            String(idEmpresa),
-          ],
-        );
-      }
     }
   }
 
@@ -560,10 +372,17 @@ export class OrdemServicoService {
   ): Promise<ListarOrdemServicoDto> {
     const rows = (await manager.query(
       `
-        SELECT *
-        FROM app.ordem_servico
-        WHERE id_empresa = $1
-          AND id_os = $2
+        SELECT
+          os.*,
+          (
+            SELECT COUNT(1)::int
+            FROM app.requisicao req
+            WHERE req.id_empresa = os.id_empresa
+              AND req.id_os = os.id_os
+          ) AS qtd_requisicoes
+        FROM app.ordem_servico os
+        WHERE os.id_empresa = $1
+          AND os.id_os = $2
         LIMIT 1
       `,
       [String(idEmpresa), idOs],
@@ -574,20 +393,10 @@ export class OrdemServicoService {
       throw new NotFoundException('Ordem de servico nao encontrada para a empresa logada.');
     }
 
-    const [ordemServico] = await this.mapearOrdensComRequisicoes(
-      manager,
-      idEmpresa,
-      [row],
-    );
-
-    if (!ordemServico) {
-      throw new NotFoundException('Ordem de servico nao encontrada para a empresa logada.');
-    }
-
-    return ordemServico;
+    return this.mapearOrdemServico(row);
   }
 
-  private async buscarRegistroOrdemOuFalhar(
+  private async buscarRegistroPorIdOuFalhar(
     manager: EntityManager,
     idEmpresa: number,
     idOs: number,
@@ -611,234 +420,30 @@ export class OrdemServicoService {
     return row;
   }
 
-  private async buscarRequisicaoMaisRecente(
-    manager: EntityManager,
-    idEmpresa: number,
-    idOs: number,
-  ): Promise<RegistroBanco | null> {
-    const rows = (await manager.query(
-      `
-        SELECT *
-        FROM app.requisicao
-        WHERE id_empresa = $1
-          AND id_os = $2
-        ORDER BY id_requisicao DESC
-        LIMIT 1
-      `,
-      [String(idEmpresa), idOs],
-    )) as RegistroBanco[];
-
-    return rows[0] ?? null;
-  }
-
-  private async mapearOrdensComRequisicoes(
-    manager: EntityManager,
-    idEmpresa: number,
-    rows: RegistroBanco[],
-  ): Promise<ListarOrdemServicoDto[]> {
-    if (rows.length === 0) {
-      return [];
-    }
-
-    const idsOs = rows
-      .map((row) => this.converterNumero(row.id_os))
-      .filter((id): id is number => id !== null);
-
-    if (idsOs.length === 0) {
-      return rows.map((row) => this.mapearOrdemServico(row, null));
-    }
-
-    const requisicaoRows = (await manager.query(
-      `
-        SELECT *
-        FROM app.requisicao
-        WHERE id_empresa = $1
-          AND id_os = ANY($2::bigint[])
-        ORDER BY id_os ASC, id_requisicao DESC
-      `,
-      [String(idEmpresa), idsOs],
-    )) as RegistroBanco[];
-
-    const requisicaoPorOs = new Map<number, RegistroBanco>();
-    for (const requisicao of requisicaoRows) {
-      const idOs = this.converterNumero(requisicao.id_os);
-      if (idOs === null) {
-        continue;
-      }
-      if (!requisicaoPorOs.has(idOs)) {
-        requisicaoPorOs.set(idOs, requisicao);
-      }
-    }
-
-    const idsRequisicao = Array.from(requisicaoPorOs.values())
-      .map((item) => this.converterNumero(item.id_requisicao))
-      .filter((id): id is number => id !== null);
-
-    const itensPorRequisicao = await this.carregarItensPorRequisicao(
-      manager,
-      idEmpresa,
-      idsRequisicao,
-    );
-
-    return rows.map((row) => {
-      const idOs = this.converterNumero(row.id_os);
-      const requisicaoRow = idOs !== null ? requisicaoPorOs.get(idOs) ?? null : null;
-      return this.mapearOrdemServico(row, requisicaoRow, itensPorRequisicao);
-    });
-  }
-
-  private async carregarItensPorRequisicao(
-    manager: EntityManager,
-    idEmpresa: number,
-    idsRequisicao: number[],
-  ): Promise<Map<number, ListarOrdemServicoItemDto[]>> {
-    const itensPorRequisicao = new Map<number, ListarOrdemServicoItemDto[]>();
-
-    if (idsRequisicao.length === 0) {
-      return itensPorRequisicao;
-    }
-
-    const rows = (await manager.query(
-      `
-        SELECT
-          itens.*,
-          produto.descricao_produto
-        FROM app.requisicao_itens itens
-        LEFT JOIN app.produto produto
-          ON produto.id_produto = itens.id_produto
-         AND produto.id_empresa = itens.id_empresa
-        WHERE itens.id_empresa = $1
-          AND itens.id_requisicao = ANY($2::bigint[])
-        ORDER BY itens.id_requisicao ASC, itens.id_item ASC
-      `,
-      [String(idEmpresa), idsRequisicao],
-    )) as RegistroBanco[];
-
-    for (const row of rows) {
-      const idRequisicao = this.converterNumero(row.id_requisicao);
-      if (idRequisicao === null) {
-        continue;
-      }
-
-      const item = this.mapearItemRequisicao(row);
-      const lista = itensPorRequisicao.get(idRequisicao) ?? [];
-      lista.push(item);
-      itensPorRequisicao.set(idRequisicao, lista);
-    }
-
-    return itensPorRequisicao;
-  }
-
-  private mapearItemRequisicao(registro: RegistroBanco): ListarOrdemServicoItemDto {
-    const qtdProduto = this.converterNumero(registro.qtd_produto) ?? 0;
-    const valorUn = this.converterNumero(registro.valor_un) ?? 0;
-
+  private mapearOrdemServico(row: RegistroBanco): ListarOrdemServicoDto {
     return {
-      idItem: this.converterNumero(registro.id_item) ?? 0,
-      idRequisicao: this.converterNumero(registro.id_requisicao) ?? 0,
-      idProduto: this.converterNumero(registro.id_produto) ?? 0,
-      descricaoProduto: this.converterTexto(registro.descricao_produto),
-      qtdProduto,
-      valorUn,
-      valorTotalItem: Number((qtdProduto * valorUn).toFixed(2)),
-      observacao: this.converterTexto(registro.observacao),
-      usuarioAtualizacao: this.converterTexto(registro.usuario_atualizacao),
-      criadoEm: this.converterDataIso(registro.criado_em) ?? '',
-      atualizadoEm: this.converterDataIso(registro.atualizado_em) ?? '',
-    };
-  }
-
-  private mapearRequisicao(
-    registro: RegistroBanco,
-    itens: ListarOrdemServicoItemDto[],
-  ): ListarOrdemServicoRequisicaoDto {
-    return {
-      idRequisicao: this.converterNumero(registro.id_requisicao) ?? 0,
-      idOs: this.converterNumero(registro.id_os) ?? 0,
-      dataRequisicao: this.converterDataIso(registro.data_requisicao) ?? '',
-      situacao:
-        this.converterTexto(registro.situacao)?.trim().toUpperCase() ?? 'A',
-      observacao: this.converterTexto(registro.observacao),
-      usuarioAtualizacao: this.converterTexto(registro.usuario_atualizacao),
-      criadoEm: this.converterDataIso(registro.criado_em) ?? '',
-      atualizadoEm: this.converterDataIso(registro.atualizado_em) ?? '',
-      itens,
-    };
-  }
-
-  private mapearOrdemServico(
-    registro: RegistroBanco,
-    requisicaoRegistro: RegistroBanco | null,
-    itensPorRequisicao: Map<number, ListarOrdemServicoItemDto[]> = new Map(),
-  ): ListarOrdemServicoDto {
-    const idRequisicao = requisicaoRegistro
-      ? this.converterNumero(requisicaoRegistro.id_requisicao)
-      : null;
-    const itens =
-      idRequisicao !== null ? itensPorRequisicao.get(idRequisicao) ?? [] : [];
-    const requisicao =
-      requisicaoRegistro !== null
-        ? this.mapearRequisicao(requisicaoRegistro, itens)
-        : null;
-
-    return {
-      idOs: this.converterNumero(registro.id_os) ?? 0,
-      idVeiculo: this.converterNumero(registro.id_veiculo) ?? 0,
-      idFornecedor: this.converterNumero(registro.id_fornecedor),
-      dataCadastro: this.converterDataIso(registro.data_cadastro) ?? '',
-      dataFechamento: this.converterDataIso(registro.data_fechamento),
+      idOs: this.converterNumero(row.id_os) ?? 0,
+      idVeiculo: this.converterNumero(row.id_veiculo) ?? 0,
+      idFornecedor: this.converterNumero(row.id_fornecedor),
+      dataCadastro: this.converterDataIso(row.data_cadastro) ?? '',
+      dataFechamento: this.converterDataIso(row.data_fechamento),
       tempoOsMin:
-        this.converterNumero(registro.tempo_os_min) ??
+        this.converterNumero(row.tempo_os_min) ??
         this.calcularTempoMinutos(
-          this.converterDataIso(registro.data_cadastro),
-          this.converterDataIso(registro.data_fechamento),
+          this.converterDataIso(row.data_cadastro),
+          this.converterDataIso(row.data_fechamento),
         ),
-      situacaoOs: this.converterTexto(registro.situacao_os)?.toUpperCase() ?? 'A',
-      observacao: this.converterTexto(registro.observacao),
-      valorTotal: this.converterNumero(registro.valor_total) ?? 0,
-      kmVeiculo: this.converterNumero(registro.km_veiculo),
-      chaveNfe: this.converterTexto(registro.chave_nfe),
-      usuarioAtualizacao: this.converterTexto(registro.usuario_atualizacao),
-      tipoServico: this.converterTexto(registro.tipo_servico)?.toUpperCase() ?? null,
-      dataAtualizacao: this.converterDataIso(registro.data_atualizacao) ?? '',
-      atualizadoEm: this.converterDataIso(registro.atualizado_em),
-      requisicao,
-      itens,
+      situacaoOs: this.converterTexto(row.situacao_os)?.toUpperCase() ?? 'A',
+      observacao: this.converterTexto(row.observacao),
+      valorTotal: this.converterNumero(row.valor_total) ?? 0,
+      kmVeiculo: this.converterNumero(row.km_veiculo),
+      chaveNfe: this.converterTexto(row.chave_nfe),
+      usuarioAtualizacao: this.converterTexto(row.usuario_atualizacao),
+      tipoServico: this.converterTexto(row.tipo_servico)?.toUpperCase() ?? null,
+      dataAtualizacao: this.converterDataIso(row.data_atualizacao) ?? '',
+      atualizadoEm: this.converterDataIso(row.atualizado_em),
+      qtdRequisicoes: this.converterNumero(row.qtd_requisicoes) ?? 0,
     };
-  }
-
-  private async validarProdutosInformados(
-    manager: EntityManager,
-    idEmpresa: number,
-    itens: ItemNormalizado[],
-  ) {
-    if (itens.length === 0) {
-      return;
-    }
-
-    const idsProduto = Array.from(new Set(itens.map((item) => item.idProduto)));
-    const rows = (await manager.query(
-      `
-        SELECT id_produto
-        FROM app.produto
-        WHERE id_empresa = $1
-          AND id_produto = ANY($2::bigint[])
-      `,
-      [String(idEmpresa), idsProduto],
-    )) as Array<{ id_produto?: string | number }>;
-
-    const encontrados = new Set(
-      rows
-        .map((item) => Number(item.id_produto))
-        .filter((id) => Number.isFinite(id)),
-    );
-
-    const faltantes = idsProduto.filter((id) => !encontrados.has(id));
-    if (faltantes.length > 0) {
-      throw new BadRequestException(
-        `Produto(s) nao encontrado(s) para a empresa logada: ${faltantes.join(', ')}.`,
-      );
-    }
   }
 
   private normalizarCriacao(
@@ -850,44 +455,27 @@ export class OrdemServicoService {
       'usuarioAtualizacao',
     );
 
-    const itens = this.normalizarItens(dados.itens, usuarioAtualizacao);
-    const valorTotal =
-      dados.valorTotal !== undefined
-        ? this.normalizarValor(dados.valorTotal, 'valorTotal')
-        : this.calcularValorTotalItens(itens);
     const dataCadastro = dados.dataCadastro
       ? this.normalizarDataHora(dados.dataCadastro, 'dataCadastro')
       : new Date().toISOString();
     const dataFechamento = dados.dataFechamento
       ? this.normalizarDataHora(dados.dataFechamento, 'dataFechamento')
       : null;
-    const tempoOsMin =
-      dados.tempoOsMin ?? this.calcularTempoMinutos(dataCadastro, dataFechamento);
 
     return {
       idVeiculo: dados.idVeiculo,
       idFornecedor: dados.idFornecedor ?? null,
       dataCadastro,
       dataFechamento,
-      tempoOsMin,
+      tempoOsMin:
+        dados.tempoOsMin ?? this.calcularTempoMinutos(dataCadastro, dataFechamento),
       situacaoOs: dados.situacaoOs ?? 'A',
       observacao: this.normalizarTextoOpcional(dados.observacao),
-      valorTotal,
+      valorTotal: this.normalizarValor(dados.valorTotal ?? 0, 'valorTotal'),
       kmVeiculo: dados.kmVeiculo ?? null,
       chaveNfe: this.normalizarTextoOpcional(dados.chaveNfe),
       tipoServico: dados.tipoServico ?? 'C',
       usuarioAtualizacao,
-      requisicao: dados.requisicao
-        ? this.normalizarRequisicao(dados.requisicao, usuarioAtualizacao, dataCadastro)
-        : itens.length > 0
-          ? {
-              dataRequisicao: dataCadastro,
-              situacao: dados.situacaoOs ?? 'A',
-              observacao: null,
-              usuarioAtualizacao,
-            }
-          : undefined,
-      itens,
     };
   }
 
@@ -930,77 +518,7 @@ export class OrdemServicoService {
           : undefined,
       tipoServico: dados.tipoServico,
       usuarioAtualizacao,
-      requisicao:
-        dados.requisicao !== undefined
-          ? this.normalizarRequisicao(
-              dados.requisicao,
-              usuarioAtualizacao,
-              new Date().toISOString(),
-            )
-          : undefined,
-      itens:
-        dados.itens !== undefined
-          ? this.normalizarItens(dados.itens, usuarioAtualizacao)
-          : undefined,
     };
-  }
-
-  private normalizarRequisicao(
-    requisicao: RequisicaoOrdemServicoDto,
-    usuarioPadrao: string,
-    dataPadrao: string,
-  ): RequisicaoNormalizada {
-    return {
-      dataRequisicao: requisicao.dataRequisicao
-        ? this.normalizarDataHora(requisicao.dataRequisicao, 'requisicao.dataRequisicao')
-        : dataPadrao,
-      situacao: requisicao.situacao ?? 'A',
-      observacao: this.normalizarTextoOpcional(requisicao.observacao),
-      usuarioAtualizacao: requisicao.usuarioAtualizacao
-        ? this.normalizarTexto(requisicao.usuarioAtualizacao, 'requisicao.usuarioAtualizacao')
-        : usuarioPadrao,
-    };
-  }
-
-  private normalizarItens(
-    itens: ItemRequisicaoDto[] | undefined,
-    usuarioPadrao: string,
-  ): ItemNormalizado[] {
-    if (!itens || itens.length === 0) {
-      return [];
-    }
-
-    return itens.map((item, index) => {
-      const idProduto = Number(item.idProduto);
-      const qtdProduto = Number(item.qtdProduto);
-      const valorUn = Number(item.valorUn);
-
-      if (!Number.isFinite(idProduto) || idProduto <= 0) {
-        throw new BadRequestException(`Item ${index + 1}: idProduto invalido.`);
-      }
-
-      if (!Number.isFinite(qtdProduto) || qtdProduto <= 0) {
-        throw new BadRequestException(`Item ${index + 1}: qtdProduto deve ser maior que zero.`);
-      }
-
-      if (!Number.isFinite(valorUn) || valorUn < 0) {
-        throw new BadRequestException(`Item ${index + 1}: valorUn invalido.`);
-      }
-
-      const quantidadeNormalizada = Number(qtdProduto.toFixed(3));
-      const valorUnNormalizado = Number(valorUn.toFixed(4));
-
-      return {
-        idProduto,
-        qtdProduto: quantidadeNormalizada,
-        valorUn: valorUnNormalizado,
-        observacao: this.normalizarTextoOpcional(item.observacao),
-        usuarioAtualizacao: item.usuarioAtualizacao
-          ? this.normalizarTexto(item.usuarioAtualizacao, `item[${index}].usuarioAtualizacao`)
-          : usuarioPadrao,
-        valorTotalItem: Number((quantidadeNormalizada * valorUnNormalizado).toFixed(2)),
-      };
-    });
   }
 
   private validarIntervalosDoFiltro(filtro: FiltroOrdemServicoDto) {
@@ -1047,38 +565,14 @@ export class OrdemServicoService {
   private resolverColunaOrdenacao(
     ordenarPor: FiltroOrdemServicoDto['ordenarPor'],
   ): string {
-    if (ordenarPor === 'id_os') {
-      return 'id_os';
-    }
-    if (ordenarPor === 'data_fechamento') {
-      return 'data_fechamento';
-    }
-    if (ordenarPor === 'valor_total') {
-      return 'valor_total';
-    }
-    if (ordenarPor === 'situacao_os') {
-      return 'situacao_os';
-    }
-    if (ordenarPor === 'tipo_servico') {
-      return 'tipo_servico';
-    }
-    if (ordenarPor === 'km_veiculo') {
-      return 'km_veiculo';
-    }
-    if (ordenarPor === 'atualizado_em') {
-      return 'atualizado_em';
-    }
-
+    if (ordenarPor === 'id_os') return 'id_os';
+    if (ordenarPor === 'data_fechamento') return 'data_fechamento';
+    if (ordenarPor === 'valor_total') return 'valor_total';
+    if (ordenarPor === 'situacao_os') return 'situacao_os';
+    if (ordenarPor === 'tipo_servico') return 'tipo_servico';
+    if (ordenarPor === 'km_veiculo') return 'km_veiculo';
+    if (ordenarPor === 'atualizado_em') return 'atualizado_em';
     return 'data_cadastro';
-  }
-
-  private calcularValorTotalItens(itens: ItemNormalizado[]): number {
-    if (itens.length === 0) {
-      return 0;
-    }
-
-    const total = itens.reduce((acc, item) => acc + item.valorTotalItem, 0);
-    return Number(total.toFixed(2));
   }
 
   private calcularTempoMinutos(
@@ -1206,7 +700,7 @@ export class OrdemServicoService {
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
-          'Veiculo, fornecedor ou produto informado nao existe para a empresa logada.',
+          'Veiculo ou fornecedor informado nao existe para a empresa logada.',
         );
       }
 

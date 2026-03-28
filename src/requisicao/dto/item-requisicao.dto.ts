@@ -19,12 +19,6 @@ function transformarNumero(valor: unknown) {
 }
 
 export class ItemRequisicaoDto {
-  @IsOptional()
-  @Transform(({ value }: { value: unknown }) => transformarNumero(value))
-  @IsInt()
-  @Min(1)
-  idItem?: number;
-
   @Transform(({ value }: { value: unknown }) => transformarNumero(value))
   @IsInt()
   @Min(1)

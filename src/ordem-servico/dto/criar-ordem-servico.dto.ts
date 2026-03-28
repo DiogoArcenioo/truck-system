@@ -1,6 +1,5 @@
 import { Transform, Type } from 'class-transformer';
 import {
-  IsArray,
   IsIn,
   IsInt,
   IsNumber,
@@ -8,10 +7,7 @@ import {
   IsString,
   MaxLength,
   Min,
-  ValidateNested,
 } from 'class-validator';
-import { ItemRequisicaoDto } from './item-requisicao.dto';
-import { RequisicaoOrdemServicoDto } from './requisicao-ordem-servico.dto';
 import { SITUACAO_OS_CODIGOS, TIPO_SERVICO_CODIGOS } from '../ordem-servico.constants';
 
 function transformarNumero(valor: unknown) {
@@ -114,15 +110,4 @@ export class CriarOrdemServicoDto {
   @IsString()
   @MaxLength(120)
   usuarioAtualizacao?: string;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => RequisicaoOrdemServicoDto)
-  requisicao?: RequisicaoOrdemServicoDto;
-
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ItemRequisicaoDto)
-  itens?: ItemRequisicaoDto[];
 }

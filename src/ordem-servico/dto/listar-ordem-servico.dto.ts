@@ -1,29 +1,3 @@
-export class ListarOrdemServicoItemDto {
-  idItem!: number;
-  idRequisicao!: number;
-  idProduto!: number;
-  descricaoProduto!: string | null;
-  qtdProduto!: number;
-  valorUn!: number;
-  valorTotalItem!: number;
-  observacao!: string | null;
-  usuarioAtualizacao!: string | null;
-  criadoEm!: string;
-  atualizadoEm!: string;
-}
-
-export class ListarOrdemServicoRequisicaoDto {
-  idRequisicao!: number;
-  idOs!: number;
-  dataRequisicao!: string;
-  situacao!: string;
-  observacao!: string | null;
-  usuarioAtualizacao!: string | null;
-  criadoEm!: string;
-  atualizadoEm!: string;
-  itens!: ListarOrdemServicoItemDto[];
-}
-
 export class ListarOrdemServicoDto {
   idOs!: number;
   idVeiculo!: number;
@@ -40,6 +14,5 @@ export class ListarOrdemServicoDto {
   tipoServico!: string | null;
   dataAtualizacao!: string;
   atualizadoEm!: string | null;
-  requisicao!: ListarOrdemServicoRequisicaoDto | null;
-  itens!: ListarOrdemServicoItemDto[];
+  qtdRequisicoes!: number;
 }

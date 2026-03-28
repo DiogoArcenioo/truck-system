@@ -9,6 +9,7 @@ import { HealthController } from './health/health.controller';
 import { MotoristasModule } from './motoristas/motoristas.module';
 import { OrdemServicoModule } from './ordem-servico/ordem-servico.module';
 import { ProdutoModule } from './produto/produto.module';
+import { RequisicaoModule } from './requisicao/requisicao.module';
 import { VeiculoModule } from './veiculo/veiculo.module';
 import { ViagensModule } from './viagens/viagens.module';
 
@@ -62,6 +63,7 @@ import { ViagensModule } from './viagens/viagens.module';
     ViagensModule,
     ProdutoModule,
     OrdemServicoModule,
+    RequisicaoModule,
   ],
   controllers: [HealthController],
 })
