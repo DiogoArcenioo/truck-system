@@ -91,7 +91,11 @@ type IndicadorExplicacaoId =
   | 'custo_manutencao'
   | 'lucro_operacional'
   | 'viagens_abertas'
-  | 'alertas_criticos';
+  | 'alertas_criticos'
+  | 'utilizacao_frota'
+  | 'motoristas_ativos_percentual'
+  | 'viagens_fechadas_percentual'
+  | 'requisicoes_fechadas_percentual';
 
 type IndicadorDefinicao = {
   id: IndicadorExplicacaoId;
@@ -201,6 +205,55 @@ const INDICADORES_DEFINICOES: Record<IndicadorExplicacaoId, IndicadorDefinicao> 
       'CNH vencida: validade_cnh menor que data atual.',
       'Documento vencido: data de vencimento do veiculo menor que data atual.',
       'OS aberta critica: OS em aberto acima da janela configurada de dias.',
+    ],
+    unidade: 'numero',
+  },
+  utilizacao_frota: {
+    id: 'utilizacao_frota',
+    titulo: 'Utilizacao da frota (%)',
+    descricao:
+      'Percentual de veiculos que tiveram ao menos uma viagem iniciada no periodo.',
+    formula: '(veiculos_com_viagem_periodo / total_veiculos) * 100',
+    considera: [
+      'Total de veiculos cadastrados na empresa no momento da consulta.',
+      'Veiculo utilizado: possui ao menos uma viagem com data_inicio no periodo.',
+      'Quando total_veiculos = 0, retorna 0%.',
+    ],
+    unidade: 'numero',
+  },
+  motoristas_ativos_percentual: {
+    id: 'motoristas_ativos_percentual',
+    titulo: 'Motoristas ativos (%)',
+    descricao: 'Percentual de motoristas com status ativo no cadastro.',
+    formula: '(motoristas_status_A / total_motoristas) * 100',
+    considera: [
+      "Status 'A' conta como ativo.",
+      "Status 'I' e 'F' nao contam como ativos.",
+      'Quando total_motoristas = 0, retorna 0%.',
+    ],
+    unidade: 'numero',
+  },
+  viagens_fechadas_percentual: {
+    id: 'viagens_fechadas_percentual',
+    titulo: 'Viagens fechadas (%)',
+    descricao: 'Percentual de viagens do periodo que possuem data_fim preenchida.',
+    formula: '(viagens_com_data_fim / total_viagens_periodo) * 100',
+    considera: [
+      'Viagens da empresa com data_inicio no periodo.',
+      'Viagem fechada: data_fim diferente de nulo.',
+      'Quando total_viagens_periodo = 0, retorna 0%.',
+    ],
+    unidade: 'numero',
+  },
+  requisicoes_fechadas_percentual: {
+    id: 'requisicoes_fechadas_percentual',
+    titulo: 'Requisicoes fechadas (%)',
+    descricao: "Percentual de requisicoes com situacao 'F' no periodo.",
+    formula: "(requisicoes_situacao_F / total_requisicoes_periodo) * 100",
+    considera: [
+      'Requisicoes da empresa com data_requisicao no periodo.',
+      "Situacao 'F' conta como fechada.",
+      'Quando total_requisicoes_periodo = 0, retorna 0%.',
     ],
     unidade: 'numero',
   },
@@ -579,11 +632,43 @@ export class DashboardService {
       );
     }
 
-    return this.detalharAlertasCriticos(
+    if (indicadorId === 'alertas_criticos') {
+      return this.detalharAlertasCriticos(
+        manager,
+        idEmpresa,
+        periodo,
+        colunasVeiculo,
+      );
+    }
+
+    if (indicadorId === 'utilizacao_frota') {
+      return this.detalharUtilizacaoFrota(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+        colunasVeiculo,
+      );
+    }
+
+    if (indicadorId === 'motoristas_ativos_percentual') {
+      return this.detalharMotoristasAtivosPercentual(manager, idEmpresa);
+    }
+
+    if (indicadorId === 'viagens_fechadas_percentual') {
+      return this.detalharViagensFechadasPercentual(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+      );
+    }
+
+    return this.detalharRequisicoesFechadasPercentual(
       manager,
       idEmpresa,
-      periodo,
-      colunasVeiculo,
+      periodo.inicio,
+      periodo.fimExclusivo,
     );
   }
 
@@ -1162,6 +1247,429 @@ export class DashboardService {
             diasEmAberto: item.diasEmAberto,
             valorTotal: item.valorTotal,
           })),
+        },
+      ],
+    };
+  }
+
+  private async detalharUtilizacaoFrota(
+    manager: EntityManager,
+    idEmpresa: number,
+    inicio: Date,
+    fimExclusivo: Date,
+    colunasVeiculo: MapaColunasVeiculoDashboard,
+  ): Promise<DetalheIndicadorResultado> {
+    const resumo = await this.carregarResumoFrota(
+      manager,
+      idEmpresa,
+      inicio,
+      fimExclusivo,
+      colunasVeiculo,
+    );
+
+    const idVeiculoV = this.colunaComAlias('v', colunasVeiculo.idVeiculo);
+    const placaV = this.colunaComAlias('v', colunasVeiculo.placa);
+    const filtroEmpresaV = colunasVeiculo.idEmpresa
+      ? `WHERE ${this.colunaComAlias('v', colunasVeiculo.idEmpresa)} = $1`
+      : '';
+
+    const linhasRows = (await manager.query(
+      `
+        WITH viagens_periodo AS (
+          SELECT
+            viagem.id_veiculo,
+            COUNT(1)::int AS qtd_viagens
+          FROM app.viagens viagem
+          WHERE viagem.id_empresa = $1
+            AND viagem.data_inicio >= $2::timestamptz
+            AND viagem.data_inicio < $3::timestamptz
+          GROUP BY viagem.id_veiculo
+        )
+        SELECT
+          ${idVeiculoV} AS id_veiculo,
+          COALESCE(${placaV}, 'SEM PLACA') AS placa,
+          COALESCE(vp.qtd_viagens, 0)::int AS qtd_viagens,
+          CASE
+            WHEN COALESCE(vp.qtd_viagens, 0) > 0 THEN 'SIM'
+            ELSE 'NAO'
+          END AS utilizado
+        FROM app.veiculo v
+        LEFT JOIN viagens_periodo vp
+          ON vp.id_veiculo = ${idVeiculoV}
+        ${filtroEmpresaV}
+        ORDER BY COALESCE(vp.qtd_viagens, 0) DESC, ${idVeiculoV} DESC
+        LIMIT 200
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
+
+    const percentual = this.arredondar(resumo.percentualUtilizacao, 2);
+
+    return {
+      valorIndicador: percentual,
+      composicao: [
+        {
+          chave: 'total_veiculos',
+          label: 'Total de veiculos',
+          valor: resumo.totalVeiculos,
+          tipo: 'numero',
+        },
+        {
+          chave: 'veiculos_com_viagem_periodo',
+          label: 'Veiculos com viagem no periodo',
+          valor: resumo.veiculosComViagemPeriodo,
+          tipo: 'numero',
+        },
+        {
+          chave: 'veiculos_parados_periodo',
+          label: 'Veiculos sem viagem no periodo',
+          valor: resumo.veiculosParadosPeriodo,
+          tipo: 'numero',
+        },
+        {
+          chave: 'percentual_utilizacao',
+          label: 'Percentual de utilizacao (%)',
+          valor: percentual,
+          tipo: 'numero',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'frota_utilizacao_base',
+          titulo: 'Veiculos considerados no calculo',
+          descricao:
+            'Lista de veiculos com quantidade de viagens no periodo e classificacao de utilizacao.',
+          colunas: [
+            { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'placa', label: 'Placa', tipo: 'texto' },
+            { chave: 'qtdViagens', label: 'Viagens no periodo', tipo: 'numero' },
+            { chave: 'utilizado', label: 'Utilizado', tipo: 'texto' },
+          ],
+          linhas: linhasRows.map((row) => ({
+            idVeiculo: this.converterInteiro(row.id_veiculo),
+            placa: this.converterTexto(row.placa) ?? 'SEM PLACA',
+            qtdViagens: this.converterInteiro(row.qtd_viagens),
+            utilizado: this.converterTexto(row.utilizado) ?? 'NAO',
+          })),
+        },
+      ],
+    };
+  }
+
+  private async detalharMotoristasAtivosPercentual(
+    manager: EntityManager,
+    idEmpresa: number,
+  ): Promise<DetalheIndicadorResultado> {
+    const resumo = await this.carregarResumoMotoristas(manager, idEmpresa);
+    const percentual = this.calcularPercentualSimples(
+      resumo.ativos,
+      resumo.totalMotoristas,
+      2,
+    );
+
+    const rows = (await manager.query(
+      `
+        SELECT
+          id_motorista,
+          COALESCE(nome, 'SEM NOME') AS nome,
+          COALESCE(status, '') AS status
+        FROM app.motoristas
+        WHERE id_empresa = $1
+        ORDER BY nome ASC, id_motorista DESC
+        LIMIT 200
+      `,
+      [String(idEmpresa)],
+    )) as RegistroBanco[];
+
+    return {
+      valorIndicador: percentual,
+      composicao: [
+        {
+          chave: 'total_motoristas',
+          label: 'Total de motoristas',
+          valor: resumo.totalMotoristas,
+          tipo: 'numero',
+        },
+        {
+          chave: 'motoristas_ativos',
+          label: 'Motoristas ativos (status A)',
+          valor: resumo.ativos,
+          tipo: 'numero',
+        },
+        {
+          chave: 'motoristas_inativos',
+          label: 'Motoristas inativos (status I)',
+          valor: resumo.inativos,
+          tipo: 'numero',
+        },
+        {
+          chave: 'motoristas_ferias',
+          label: 'Motoristas em ferias (status F)',
+          valor: resumo.ferias,
+          tipo: 'numero',
+        },
+        {
+          chave: 'percentual_ativos',
+          label: 'Percentual de ativos (%)',
+          valor: percentual,
+          tipo: 'numero',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'motoristas_status_base',
+          titulo: 'Motoristas considerados no calculo',
+          descricao:
+            "Todos os motoristas da empresa, com indicacao se entram como ativos (status = 'A').",
+          colunas: [
+            { chave: 'idMotorista', label: 'Motorista', tipo: 'numero' },
+            { chave: 'nome', label: 'Nome', tipo: 'texto' },
+            { chave: 'status', label: 'Status', tipo: 'texto' },
+            { chave: 'consideradoAtivo', label: 'Conta como ativo', tipo: 'texto' },
+          ],
+          linhas: rows.map((row) => {
+            const status = this.converterTexto(row.status)?.toUpperCase() ?? '';
+            return {
+              idMotorista: this.converterInteiro(row.id_motorista),
+              nome: this.converterTexto(row.nome) ?? 'SEM NOME',
+              status: status || 'N/D',
+              consideradoAtivo: status === 'A' ? 'SIM' : 'NAO',
+            };
+          }),
+        },
+      ],
+    };
+  }
+
+  private async detalharViagensFechadasPercentual(
+    manager: EntityManager,
+    idEmpresa: number,
+    inicio: Date,
+    fimExclusivo: Date,
+  ): Promise<DetalheIndicadorResultado> {
+    const [resumoRows, linhasRows] = await Promise.all([
+      manager.query(
+        `
+          SELECT
+            COUNT(1)::int AS total_viagens,
+            COUNT(1) FILTER (WHERE data_fim IS NOT NULL)::int AS viagens_fechadas,
+            COUNT(1) FILTER (WHERE data_fim IS NULL)::int AS viagens_abertas,
+            COUNT(1) FILTER (WHERE UPPER(COALESCE(status, '')) = 'C')::int AS viagens_canceladas
+          FROM app.viagens
+          WHERE id_empresa = $1
+            AND data_inicio >= $2::timestamptz
+            AND data_inicio < $3::timestamptz
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+      manager.query(
+        `
+          SELECT
+            id_viagem,
+            id_veiculo,
+            id_motorista,
+            data_inicio,
+            data_fim,
+            status,
+            COALESCE(valor_frete, 0)::numeric AS valor_frete
+          FROM app.viagens
+          WHERE id_empresa = $1
+            AND data_inicio >= $2::timestamptz
+            AND data_inicio < $3::timestamptz
+          ORDER BY data_inicio DESC, id_viagem DESC
+          LIMIT 160
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+    ]);
+
+    const resumo = resumoRows[0] ?? {};
+    const totalViagens = this.converterInteiro(resumo.total_viagens);
+    const viagensFechadas = this.converterInteiro(resumo.viagens_fechadas);
+    const percentual = this.calcularPercentualSimples(viagensFechadas, totalViagens, 2);
+
+    return {
+      valorIndicador: percentual,
+      composicao: [
+        {
+          chave: 'total_viagens',
+          label: 'Total de viagens no periodo',
+          valor: totalViagens,
+          tipo: 'numero',
+        },
+        {
+          chave: 'viagens_fechadas',
+          label: 'Viagens fechadas (data_fim preenchida)',
+          valor: viagensFechadas,
+          tipo: 'numero',
+        },
+        {
+          chave: 'viagens_abertas',
+          label: 'Viagens abertas (data_fim nula)',
+          valor: this.converterInteiro(resumo.viagens_abertas),
+          tipo: 'numero',
+        },
+        {
+          chave: 'viagens_canceladas',
+          label: 'Viagens canceladas (status C)',
+          valor: this.converterInteiro(resumo.viagens_canceladas),
+          tipo: 'numero',
+        },
+        {
+          chave: 'percentual_fechadas',
+          label: 'Percentual de viagens fechadas (%)',
+          valor: percentual,
+          tipo: 'numero',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'viagens_fechadas_base',
+          titulo: 'Viagens consideradas no calculo',
+          descricao:
+            'Viagens do periodo com marcacao de fechada (data_fim preenchida).',
+          colunas: [
+            { chave: 'idViagem', label: 'Viagem', tipo: 'numero' },
+            { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'idMotorista', label: 'Motorista', tipo: 'numero' },
+            { chave: 'dataInicio', label: 'Data inicio', tipo: 'data' },
+            { chave: 'dataFim', label: 'Data fim', tipo: 'data' },
+            { chave: 'status', label: 'Status', tipo: 'texto' },
+            { chave: 'fechada', label: 'Fechada', tipo: 'texto' },
+            { chave: 'valorFrete', label: 'Valor frete', tipo: 'moeda' },
+          ],
+          linhas: linhasRows.map((row) => ({
+            idViagem: this.converterInteiro(row.id_viagem),
+            idVeiculo: this.converterInteiro(row.id_veiculo),
+            idMotorista: this.converterInteiro(row.id_motorista),
+            dataInicio: this.converterData(row.data_inicio),
+            dataFim: this.converterData(row.data_fim),
+            status: this.converterTexto(row.status),
+            fechada: row.data_fim ? 'SIM' : 'NAO',
+            valorFrete: this.arredondar(this.converterNumero(row.valor_frete)),
+          })),
+        },
+      ],
+    };
+  }
+
+  private async detalharRequisicoesFechadasPercentual(
+    manager: EntityManager,
+    idEmpresa: number,
+    inicio: Date,
+    fimExclusivo: Date,
+  ): Promise<DetalheIndicadorResultado> {
+    const [resumoRows, linhasRows] = await Promise.all([
+      manager.query(
+        `
+          SELECT
+            COUNT(1)::int AS total_requisicoes,
+            COUNT(1) FILTER (WHERE situacao = 'F')::int AS requisicoes_fechadas,
+            COUNT(1) FILTER (WHERE situacao = 'A')::int AS requisicoes_abertas,
+            COUNT(1) FILTER (WHERE situacao = 'C')::int AS requisicoes_canceladas
+          FROM app.requisicao
+          WHERE id_empresa = $1
+            AND data_requisicao >= $2::timestamptz
+            AND data_requisicao < $3::timestamptz
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+      manager.query(
+        `
+          SELECT
+            req.id_requisicao,
+            req.id_os,
+            req.data_requisicao,
+            req.situacao,
+            COALESCE(
+              SUM(
+                COALESCE(itens.qtd_produto, 0)::numeric * COALESCE(itens.valor_un, 0)::numeric
+              ),
+              0
+            )::numeric AS valor_total_calculado
+          FROM app.requisicao req
+          LEFT JOIN app.requisicao_itens itens
+            ON itens.id_requisicao = req.id_requisicao
+           AND itens.id_empresa = req.id_empresa
+          WHERE req.id_empresa = $1
+            AND req.data_requisicao >= $2::timestamptz
+            AND req.data_requisicao < $3::timestamptz
+          GROUP BY req.id_requisicao, req.id_os, req.data_requisicao, req.situacao
+          ORDER BY req.data_requisicao DESC, req.id_requisicao DESC
+          LIMIT 160
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+    ]);
+
+    const resumo = resumoRows[0] ?? {};
+    const totalRequisicoes = this.converterInteiro(resumo.total_requisicoes);
+    const requisicoesFechadas = this.converterInteiro(resumo.requisicoes_fechadas);
+    const percentual = this.calcularPercentualSimples(
+      requisicoesFechadas,
+      totalRequisicoes,
+      2,
+    );
+
+    return {
+      valorIndicador: percentual,
+      composicao: [
+        {
+          chave: 'total_requisicoes',
+          label: 'Total de requisicoes no periodo',
+          valor: totalRequisicoes,
+          tipo: 'numero',
+        },
+        {
+          chave: 'requisicoes_fechadas',
+          label: "Requisicoes fechadas (situacao = 'F')",
+          valor: requisicoesFechadas,
+          tipo: 'numero',
+        },
+        {
+          chave: 'requisicoes_abertas',
+          label: "Requisicoes abertas (situacao = 'A')",
+          valor: this.converterInteiro(resumo.requisicoes_abertas),
+          tipo: 'numero',
+        },
+        {
+          chave: 'requisicoes_canceladas',
+          label: "Requisicoes canceladas (situacao = 'C')",
+          valor: this.converterInteiro(resumo.requisicoes_canceladas),
+          tipo: 'numero',
+        },
+        {
+          chave: 'percentual_fechadas',
+          label: 'Percentual de requisicoes fechadas (%)',
+          valor: percentual,
+          tipo: 'numero',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'requisicoes_fechadas_base',
+          titulo: 'Requisicoes consideradas no calculo',
+          colunas: [
+            { chave: 'idRequisicao', label: 'Requisicao', tipo: 'numero' },
+            { chave: 'idOs', label: 'OS', tipo: 'numero' },
+            { chave: 'dataRequisicao', label: 'Data requisicao', tipo: 'data' },
+            { chave: 'situacao', label: 'Situacao', tipo: 'texto' },
+            { chave: 'fechada', label: 'Fechada', tipo: 'texto' },
+            { chave: 'valorTotalCalculado', label: 'Valor total', tipo: 'moeda' },
+          ],
+          linhas: linhasRows.map((row) => {
+            const situacao = this.converterTexto(row.situacao)?.toUpperCase() ?? '';
+            return {
+              idRequisicao: this.converterInteiro(row.id_requisicao),
+              idOs: this.converterInteiro(row.id_os),
+              dataRequisicao: this.converterData(row.data_requisicao),
+              situacao: situacao || 'N/D',
+              fechada: situacao === 'F' ? 'SIM' : 'NAO',
+              valorTotalCalculado: this.arredondar(
+                this.converterNumero(row.valor_total_calculado),
+              ),
+            };
+          }),
         },
       ],
     };
@@ -2134,6 +2642,18 @@ export class DashboardService {
       return atual === 0 ? 0 : null;
     }
     return this.arredondar(((atual - anterior) / Math.abs(anterior)) * 100, 2);
+  }
+
+  private calcularPercentualSimples(
+    parte: number,
+    total: number,
+    casas = 2,
+  ): number {
+    if (!Number.isFinite(parte) || !Number.isFinite(total) || total <= 0) {
+      return 0;
+    }
+
+    return this.arredondar((parte / total) * 100, casas);
   }
 
   private converterNumero(valor: unknown): number {
