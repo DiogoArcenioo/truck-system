@@ -1180,7 +1180,7 @@ export class DashboardService {
     const rows = (await manager.query(
       `
         SELECT
-          COALESCE(tipo_servico, 'N/D') AS tipo_servico,
+          COALESCE(tipo_servico::text, 'N/D') AS tipo_servico,
           COUNT(1)::int AS qtd_os,
           COALESCE(SUM(COALESCE(valor_total, 0)::numeric), 0)::numeric AS valor_total
         FROM app.ordem_servico
@@ -1188,7 +1188,7 @@ export class DashboardService {
           AND data_cadastro >= $2::timestamptz
           AND data_cadastro < $3::timestamptz
           AND situacao_os <> 'C'
-        GROUP BY COALESCE(tipo_servico, 'N/D')
+        GROUP BY COALESCE(tipo_servico::text, 'N/D')
         ORDER BY valor_total DESC
       `,
       [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
