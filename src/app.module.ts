@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { AbastecimentosModule } from './abastecimentos/abastecimentos.module';
 import { CombustiveisModule } from './combustiveis/combustiveis.module';
 import { CorVeiculoModule } from './cor-veiculo/cor-veiculo.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { FornecedorModule } from './fornecedor/fornecedor.module';
 import { HealthController } from './health/health.controller';
 import { MarcaVeiculoModule } from './marca-veiculo/marca-veiculo.module';
@@ -76,6 +77,7 @@ import { ViagensModule } from './viagens/viagens.module';
     OrdemServicoModule,
     RequisicaoModule,
     TiposVeiculoModule,
+    DashboardModule,
   ],
   controllers: [HealthController],
 })

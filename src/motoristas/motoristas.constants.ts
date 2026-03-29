@@ -1,4 +1,4 @@
-export const STATUS_MOTORISTA_OPCOES = [
+﻿export const STATUS_MOTORISTA_OPCOES = [
   { codigo: 'A', label: 'Ativo' },
   { codigo: 'I', label: 'Inativo' },
   { codigo: 'F', label: 'Ferias' },
