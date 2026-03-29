@@ -9,29 +9,29 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { QueryFailedError } from 'typeorm';
-import { FiltroDashboardDto } from './dto/filtro-dashboard.dto';
+import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { DashboardService } from './dashboard.service';
+import { FiltroDashboardDto } from './dto/filtro-dashboard.dto';
 
 type RequisicaoAutenticada = {
   usuario?: JwtUsuarioPayload;
 };
 
-@Controller('api/dashboard')
+@Controller('api/sistema')
 @UseGuards(JwtAuthGuard)
-export class DashboardController {
-  private readonly logger = new Logger(DashboardController.name);
+export class SistemaDashboardController {
+  private readonly logger = new Logger(SistemaDashboardController.name);
 
   constructor(private readonly dashboardService: DashboardService) {}
 
-  @Get()
-  @Get('home')
-  async obterHome(
+  @Get('dashboard')
+  async obterDashboard(
     @Req() request: RequisicaoAutenticada,
     @Query() filtro: FiltroDashboardDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
+
     try {
       return await this.dashboardService.obterHome(usuario.idEmpresa, filtro);
     } catch (error) {
@@ -41,7 +41,7 @@ export class DashboardController {
 
       const detalhe = this.descreverErro(error);
       this.logger.error(
-        `Erro inesperado ao carregar dashboard. empresa=${usuario.idEmpresa}`,
+        `Erro inesperado ao carregar dashboard (api/sistema). empresa=${usuario.idEmpresa}`,
         error instanceof Error ? error.stack : undefined,
       );
 
@@ -82,3 +82,4 @@ export class DashboardController {
     }
   }
 }
+

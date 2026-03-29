@@ -436,7 +436,7 @@ export class DashboardService {
     const custoExpr = this.expressaoCustoAbastecimento(colunas, 'ab');
     const filtroEmpresa = colunas.idEmpresa
       ? `${this.colunaComAlias('ab', colunas.idEmpresa)} = $1`
-      : '1 = 1';
+      : '$1::text IS NOT NULL';
 
     const rows = (await manager.query(
       `
@@ -556,7 +556,7 @@ export class DashboardService {
   ): Promise<ResumoFrota> {
     const filtroEmpresa = colunasVeiculo.idEmpresa
       ? `${this.colunaComAlias('v', colunasVeiculo.idEmpresa)} = $1`
-      : '1 = 1';
+      : '$1::text IS NOT NULL';
     const exprSemMotorista = colunasVeiculo.idMotoristaAtual
       ? `COUNT(1) FILTER (WHERE ${this.colunaComAlias('v', colunasVeiculo.idMotoristaAtual)} IS NULL)::int`
       : '0::int';
@@ -700,7 +700,7 @@ export class DashboardService {
     );
     const filtroEmpresa = colunasVeiculo.idEmpresa
       ? `${this.colunaComAlias('v', colunasVeiculo.idEmpresa)} = $1 AND`
-      : '';
+      : '$1::text IS NOT NULL AND';
 
     return manager.query(
       `
@@ -861,7 +861,7 @@ export class DashboardService {
     const custoExprAb = this.expressaoCustoAbastecimento(colunasAbastecimento, 'ab');
     const filtroEmpresaAb = colunasAbastecimento.idEmpresa
       ? `${this.colunaComAlias('ab', colunasAbastecimento.idEmpresa)} = $1`
-      : '1 = 1';
+      : '$1::text IS NOT NULL';
 
     const [mesesRows, faturamentoRows, combustivelRows, manutencaoRows] =
       await Promise.all([
@@ -957,7 +957,7 @@ export class DashboardService {
     const custoExprAb = this.expressaoCustoAbastecimento(colunasAbastecimento, 'ab');
     const filtroEmpresaAb = colunasAbastecimento.idEmpresa
       ? `${this.colunaComAlias('ab', colunasAbastecimento.idEmpresa)} = $1`
-      : '1 = 1';
+      : '$1::text IS NOT NULL';
 
     const idVeiculoV = this.colunaComAlias('v', colunasVeiculo.idVeiculo);
     const placaV = this.colunaComAlias('v', colunasVeiculo.placa);
