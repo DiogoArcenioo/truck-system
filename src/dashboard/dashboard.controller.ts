@@ -4,6 +4,7 @@ import {
   HttpException,
   InternalServerErrorException,
   Logger,
+  Param,
   Query,
   Req,
   UnauthorizedException,
@@ -47,6 +48,42 @@ export class DashboardController {
 
       throw new InternalServerErrorException(
         `Falha inesperada ao carregar dashboard. DEBUG: ${detalhe}`,
+      );
+    }
+  }
+
+  @Get('indicadores')
+  async listarIndicadores(@Req() request: RequisicaoAutenticada) {
+    this.obterUsuarioAutenticado(request);
+    return this.dashboardService.listarIndicadores();
+  }
+
+  @Get('indicadores/:indicadorId')
+  async detalharIndicador(
+    @Req() request: RequisicaoAutenticada,
+    @Param('indicadorId') indicadorId: string,
+    @Query() filtro: FiltroDashboardDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    try {
+      return await this.dashboardService.obterDetalheIndicador(
+        usuario.idEmpresa,
+        indicadorId,
+        filtro,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detalhe = this.descreverErro(error);
+      this.logger.error(
+        `Erro inesperado ao detalhar indicador. empresa=${usuario.idEmpresa}, indicador=${indicadorId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new InternalServerErrorException(
+        `Falha inesperada ao detalhar indicador. DEBUG: ${detalhe}`,
       );
     }
   }

@@ -85,9 +85,182 @@ type ResumoAlertas = {
   osAbertasCriticas: number;
 };
 
+type IndicadorExplicacaoId =
+  | 'faturamento'
+  | 'custo_combustivel'
+  | 'custo_manutencao'
+  | 'lucro_operacional'
+  | 'viagens_abertas'
+  | 'alertas_criticos';
+
+type IndicadorDefinicao = {
+  id: IndicadorExplicacaoId;
+  titulo: string;
+  descricao: string;
+  formula: string;
+  considera: string[];
+  unidade: 'moeda' | 'numero';
+};
+
+type DetalheIndicadorComposicao = {
+  chave: string;
+  label: string;
+  valor: number | string;
+  tipo?: 'moeda' | 'numero' | 'data' | 'texto';
+};
+
+type DetalheIndicadorTabela = {
+  id: string;
+  titulo: string;
+  descricao?: string;
+  colunas: Array<{
+    chave: string;
+    label: string;
+    tipo?: 'moeda' | 'numero' | 'data' | 'texto';
+  }>;
+  linhas: Array<Record<string, unknown>>;
+};
+
+type DetalheIndicadorResultado = {
+  valorIndicador: number;
+  composicao: DetalheIndicadorComposicao[];
+  tabelas: DetalheIndicadorTabela[];
+};
+
+const INDICADORES_DEFINICOES: Record<IndicadorExplicacaoId, IndicadorDefinicao> = {
+  faturamento: {
+    id: 'faturamento',
+    titulo: 'Faturamento',
+    descricao: 'Soma do valor de frete das viagens do periodo selecionado.',
+    formula: 'SUM(viagens.valor_frete)',
+    considera: [
+      'Viagens da empresa com data_inicio dentro do periodo.',
+      'Valores nulos de frete sao tratados como zero.',
+      'Nao aplica deducao de custos neste indicador.',
+    ],
+    unidade: 'moeda',
+  },
+  custo_combustivel: {
+    id: 'custo_combustivel',
+    titulo: 'Custo combustivel',
+    descricao: 'Soma dos abastecimentos do periodo, com fallback para litros x valor/litro.',
+    formula:
+      'SUM(COALESCE(abastecimentos.valor_total, abastecimentos.litros * abastecimentos.valor_litro))',
+    considera: [
+      'Abastecimentos da empresa com data_abastecimento no periodo.',
+      'Se valor_total nao existir/for nulo, usa litros x valor_litro.',
+      'Nao inclui manutencao, requisicoes ou outras despesas.',
+    ],
+    unidade: 'moeda',
+  },
+  custo_manutencao: {
+    id: 'custo_manutencao',
+    titulo: 'Custo manutencao',
+    descricao: 'Soma de valor_total das OS no periodo, exceto canceladas.',
+    formula:
+      "SUM(CASE WHEN ordem_servico.situacao_os = 'C' THEN 0 ELSE ordem_servico.valor_total END)",
+    considera: [
+      'Ordens de servico com data_cadastro no periodo.',
+      "OS com situacao 'C' (cancelada) nao entram no custo.",
+      'Valor nulo de OS e tratado como zero.',
+    ],
+    unidade: 'moeda',
+  },
+  lucro_operacional: {
+    id: 'lucro_operacional',
+    titulo: 'Lucro operacional',
+    descricao: 'Resultado estimado no periodo.',
+    formula: 'faturamento - custo_combustivel - custo_manutencao',
+    considera: [
+      'Usa os tres indicadores calculados no mesmo periodo.',
+      'Nao considera impostos, folha, pedagio, multas ou outros custos indiretos.',
+      'Serve como visao gerencial rapida da operacao.',
+    ],
+    unidade: 'moeda',
+  },
+  viagens_abertas: {
+    id: 'viagens_abertas',
+    titulo: 'Viagens abertas',
+    descricao: 'Quantidade de viagens sem data_fim no periodo.',
+    formula: 'COUNT(viagens) WHERE data_fim IS NULL',
+    considera: [
+      'Viagens da empresa com data_inicio no periodo.',
+      'Considera aberta quando data_fim esta nula.',
+      'Status da viagem nao altera o criterio principal.',
+    ],
+    unidade: 'numero',
+  },
+  alertas_criticos: {
+    id: 'alertas_criticos',
+    titulo: 'Alertas criticos',
+    descricao:
+      'Soma de CNHs vencidas + documentos de veiculo vencidos + OS abertas criticas.',
+    formula:
+      'cnh_vencida + documentos_veiculo_vencidos + os_abertas_criticas',
+    considera: [
+      'CNH vencida: validade_cnh menor que data atual.',
+      'Documento vencido: data de vencimento do veiculo menor que data atual.',
+      'OS aberta critica: OS em aberto acima da janela configurada de dias.',
+    ],
+    unidade: 'numero',
+  },
+};
+
 @Injectable()
 export class DashboardService {
   constructor(private readonly dataSource: DataSource) {}
+
+  listarIndicadores() {
+    return {
+      sucesso: true,
+      indicadores: Object.values(INDICADORES_DEFINICOES),
+    };
+  }
+
+  async obterDetalheIndicador(
+    idEmpresa: number,
+    indicadorIdBruto: string,
+    filtro: FiltroDashboardDto,
+  ) {
+    const indicadorId = this.normalizarIndicadorId(indicadorIdBruto);
+    const definicao = INDICADORES_DEFINICOES[indicadorId];
+    const periodo = this.resolverPeriodo(filtro);
+
+    return this.executarComRls(idEmpresa, async (manager) => {
+      const colunasAbastecimento = await this.carregarMapaColunasAbastecimento(
+        manager,
+      );
+      const colunasVeiculo = await this.carregarMapaColunasVeiculo(manager);
+
+      const detalhes = await this.montarDetalheIndicador(
+        manager,
+        idEmpresa,
+        indicadorId,
+        periodo,
+        colunasAbastecimento,
+        colunasVeiculo,
+      );
+
+      return {
+        sucesso: true,
+        indicador: {
+          id: definicao.id,
+          titulo: definicao.titulo,
+          descricao: definicao.descricao,
+          formula: definicao.formula,
+          considera: definicao.considera,
+          unidade: definicao.unidade,
+          periodo: {
+            inicio: this.formatarDataIso(periodo.inicio),
+            fim: this.formatarDataIso(
+              this.adicionarDias(periodo.fimExclusivo, -1),
+            ),
+          },
+          ...detalhes,
+        },
+      };
+    });
+  }
 
   async obterHome(idEmpresa: number, filtro: FiltroDashboardDto) {
     const periodo = this.resolverPeriodo(filtro);
@@ -337,6 +510,661 @@ export class DashboardService {
         },
       };
     });
+  }
+
+  private normalizarIndicadorId(
+    indicadorIdBruto: string,
+  ): IndicadorExplicacaoId {
+    const indicadorId = indicadorIdBruto.trim().toLowerCase();
+    if (indicadorId in INDICADORES_DEFINICOES) {
+      return indicadorId as IndicadorExplicacaoId;
+    }
+
+    throw new BadRequestException(
+      `Indicador ${indicadorIdBruto} nao suportado para detalhamento.`,
+    );
+  }
+
+  private async montarDetalheIndicador(
+    manager: EntityManager,
+    idEmpresa: number,
+    indicadorId: IndicadorExplicacaoId,
+    periodo: PeriodoConsultaDashboard,
+    colunasAbastecimento: MapaColunasAbastecimentoDashboard,
+    colunasVeiculo: MapaColunasVeiculoDashboard,
+  ): Promise<DetalheIndicadorResultado> {
+    if (indicadorId === 'faturamento') {
+      return this.detalharFaturamento(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+      );
+    }
+
+    if (indicadorId === 'custo_combustivel') {
+      return this.detalharCustoCombustivel(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+        colunasAbastecimento,
+      );
+    }
+
+    if (indicadorId === 'custo_manutencao') {
+      return this.detalharCustoManutencao(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+      );
+    }
+
+    if (indicadorId === 'lucro_operacional') {
+      return this.detalharLucroOperacional(
+        manager,
+        idEmpresa,
+        periodo,
+        colunasAbastecimento,
+      );
+    }
+
+    if (indicadorId === 'viagens_abertas') {
+      return this.detalharViagensAbertas(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+      );
+    }
+
+    return this.detalharAlertasCriticos(
+      manager,
+      idEmpresa,
+      periodo,
+      colunasVeiculo,
+    );
+  }
+
+  private async detalharFaturamento(
+    manager: EntityManager,
+    idEmpresa: number,
+    inicio: Date,
+    fimExclusivo: Date,
+  ): Promise<DetalheIndicadorResultado> {
+    const [resumoRows, linhasRows] = await Promise.all([
+      manager.query(
+        `
+          SELECT
+            COUNT(1)::int AS total_viagens,
+            COALESCE(SUM(COALESCE(valor_frete, 0)::numeric), 0)::numeric AS valor_total,
+            COALESCE(AVG(COALESCE(valor_frete, 0)::numeric), 0)::numeric AS ticket_medio
+          FROM app.viagens
+          WHERE id_empresa = $1
+            AND data_inicio >= $2::timestamptz
+            AND data_inicio < $3::timestamptz
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+      manager.query(
+        `
+          SELECT
+            id_viagem,
+            id_veiculo,
+            id_motorista,
+            data_inicio,
+            data_fim,
+            status,
+            COALESCE(valor_frete, 0)::numeric AS valor_frete
+          FROM app.viagens
+          WHERE id_empresa = $1
+            AND data_inicio >= $2::timestamptz
+            AND data_inicio < $3::timestamptz
+          ORDER BY data_inicio DESC, id_viagem DESC
+          LIMIT 120
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+    ]);
+
+    const resumo = resumoRows[0] ?? {};
+    const valorTotal = this.arredondar(this.converterNumero(resumo.valor_total));
+
+    return {
+      valorIndicador: valorTotal,
+      composicao: [
+        {
+          chave: 'total_viagens',
+          label: 'Total de viagens consideradas',
+          valor: this.converterInteiro(resumo.total_viagens),
+          tipo: 'numero',
+        },
+        {
+          chave: 'ticket_medio',
+          label: 'Ticket medio por viagem',
+          valor: this.arredondar(this.converterNumero(resumo.ticket_medio)),
+          tipo: 'moeda',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'viagens_faturamento',
+          titulo: 'Viagens usadas no calculo',
+          descricao:
+            'Registros da tabela app.viagens dentro do periodo (limitado para visualizacao).',
+          colunas: [
+            { chave: 'idViagem', label: 'Viagem', tipo: 'numero' },
+            { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'idMotorista', label: 'Motorista', tipo: 'numero' },
+            { chave: 'dataInicio', label: 'Data inicio', tipo: 'data' },
+            { chave: 'dataFim', label: 'Data fim', tipo: 'data' },
+            { chave: 'status', label: 'Status', tipo: 'texto' },
+            { chave: 'valorFrete', label: 'Valor frete', tipo: 'moeda' },
+          ],
+          linhas: linhasRows.map((row) => ({
+            idViagem: this.converterInteiro(row.id_viagem),
+            idVeiculo: this.converterInteiro(row.id_veiculo),
+            idMotorista: this.converterInteiro(row.id_motorista),
+            dataInicio: this.converterData(row.data_inicio),
+            dataFim: this.converterData(row.data_fim),
+            status: this.converterTexto(row.status),
+            valorFrete: this.arredondar(this.converterNumero(row.valor_frete)),
+          })),
+        },
+      ],
+    };
+  }
+
+  private async detalharCustoCombustivel(
+    manager: EntityManager,
+    idEmpresa: number,
+    inicio: Date,
+    fimExclusivo: Date,
+    colunas: MapaColunasAbastecimentoDashboard,
+  ): Promise<DetalheIndicadorResultado> {
+    const dataColuna = this.colunaComAlias('ab', colunas.dataAbastecimento);
+    const litrosColuna = this.colunaComAlias('ab', colunas.litros);
+    const valorLitroColuna = this.colunaComAlias('ab', colunas.valorLitro);
+    const kmColuna = this.colunaComAlias('ab', colunas.km);
+    const idVeiculoColuna = this.colunaComAlias('ab', colunas.idVeiculo);
+    const idAbastecimentoColuna = this.colunaComAlias('ab', colunas.idAbastecimento);
+    const custoExpr = this.expressaoCustoAbastecimento(colunas, 'ab');
+    const filtroEmpresa = colunas.idEmpresa
+      ? `${this.colunaComAlias('ab', colunas.idEmpresa)} = $1`
+      : '$1::text IS NOT NULL';
+
+    const [resumoRows, linhasRows] = await Promise.all([
+      manager.query(
+        `
+          SELECT
+            COUNT(1)::int AS total_registros,
+            COALESCE(SUM(COALESCE(${litrosColuna}::numeric, 0)), 0)::numeric AS litros_total,
+            COALESCE(AVG(NULLIF(COALESCE(${valorLitroColuna}::numeric, 0), 0)), 0)::numeric AS preco_medio,
+            COALESCE(SUM(${custoExpr}), 0)::numeric AS custo_total
+          FROM app.abastecimentos ab
+          WHERE ${filtroEmpresa}
+            AND ${dataColuna} >= $2::timestamptz
+            AND ${dataColuna} < $3::timestamptz
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+      manager.query(
+        `
+          SELECT
+            ${idAbastecimentoColuna} AS id_abastecimento,
+            ${idVeiculoColuna} AS id_veiculo,
+            ${dataColuna} AS data_abastecimento,
+            COALESCE(${litrosColuna}::numeric, 0)::numeric AS litros,
+            COALESCE(${valorLitroColuna}::numeric, 0)::numeric AS valor_litro,
+            COALESCE(${kmColuna}::numeric, 0)::numeric AS km,
+            ${custoExpr}::numeric AS custo_calculado
+          FROM app.abastecimentos ab
+          WHERE ${filtroEmpresa}
+            AND ${dataColuna} >= $2::timestamptz
+            AND ${dataColuna} < $3::timestamptz
+          ORDER BY ${dataColuna} DESC, ${idAbastecimentoColuna} DESC
+          LIMIT 120
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+    ]);
+
+    const resumo = resumoRows[0] ?? {};
+    const custoTotal = this.arredondar(this.converterNumero(resumo.custo_total));
+
+    return {
+      valorIndicador: custoTotal,
+      composicao: [
+        {
+          chave: 'total_registros',
+          label: 'Total de abastecimentos considerados',
+          valor: this.converterInteiro(resumo.total_registros),
+          tipo: 'numero',
+        },
+        {
+          chave: 'litros_total',
+          label: 'Total de litros',
+          valor: this.arredondar(this.converterNumero(resumo.litros_total), 3),
+          tipo: 'numero',
+        },
+        {
+          chave: 'preco_medio',
+          label: 'Preco medio por litro',
+          valor: this.arredondar(this.converterNumero(resumo.preco_medio), 4),
+          tipo: 'moeda',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'abastecimentos_custo',
+          titulo: 'Abastecimentos usados no calculo',
+          descricao:
+            'Registros da tabela app.abastecimentos com custo calculado por linha (limitado para visualizacao).',
+          colunas: [
+            { chave: 'idAbastecimento', label: 'Abastecimento', tipo: 'numero' },
+            { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'dataAbastecimento', label: 'Data', tipo: 'data' },
+            { chave: 'litros', label: 'Litros', tipo: 'numero' },
+            { chave: 'valorLitro', label: 'Valor/litro', tipo: 'moeda' },
+            { chave: 'km', label: 'KM', tipo: 'numero' },
+            { chave: 'custoCalculado', label: 'Custo calculado', tipo: 'moeda' },
+          ],
+          linhas: linhasRows.map((row) => ({
+            idAbastecimento: this.converterInteiro(row.id_abastecimento),
+            idVeiculo: this.converterInteiro(row.id_veiculo),
+            dataAbastecimento: this.converterData(row.data_abastecimento),
+            litros: this.arredondar(this.converterNumero(row.litros), 3),
+            valorLitro: this.arredondar(this.converterNumero(row.valor_litro), 4),
+            km: this.arredondar(this.converterNumero(row.km), 1),
+            custoCalculado: this.arredondar(
+              this.converterNumero(row.custo_calculado),
+            ),
+          })),
+        },
+      ],
+    };
+  }
+
+  private async detalharCustoManutencao(
+    manager: EntityManager,
+    idEmpresa: number,
+    inicio: Date,
+    fimExclusivo: Date,
+  ): Promise<DetalheIndicadorResultado> {
+    const [resumoRows, linhasRows] = await Promise.all([
+      manager.query(
+        `
+          SELECT
+            COUNT(1)::int AS total_os,
+            COUNT(1) FILTER (WHERE situacao_os = 'A')::int AS os_abertas,
+            COUNT(1) FILTER (WHERE situacao_os = 'F')::int AS os_fechadas,
+            COUNT(1) FILTER (WHERE situacao_os = 'C')::int AS os_canceladas,
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN situacao_os = 'C' THEN 0
+                  ELSE COALESCE(valor_total, 0)::numeric
+                END
+              ),
+              0
+            )::numeric AS custo_total
+          FROM app.ordem_servico
+          WHERE id_empresa = $1
+            AND data_cadastro >= $2::timestamptz
+            AND data_cadastro < $3::timestamptz
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+      manager.query(
+        `
+          SELECT
+            id_os,
+            id_veiculo,
+            id_fornecedor,
+            data_cadastro,
+            data_fechamento,
+            situacao_os,
+            COALESCE(tipo_servico::text, 'N/D') AS tipo_servico,
+            COALESCE(valor_total, 0)::numeric AS valor_total
+          FROM app.ordem_servico
+          WHERE id_empresa = $1
+            AND data_cadastro >= $2::timestamptz
+            AND data_cadastro < $3::timestamptz
+          ORDER BY data_cadastro DESC, id_os DESC
+          LIMIT 120
+        `,
+        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+      ) as Promise<RegistroBanco[]>,
+    ]);
+
+    const resumo = resumoRows[0] ?? {};
+    const custoTotal = this.arredondar(this.converterNumero(resumo.custo_total));
+
+    return {
+      valorIndicador: custoTotal,
+      composicao: [
+        {
+          chave: 'total_os',
+          label: 'Total de OS no periodo',
+          valor: this.converterInteiro(resumo.total_os),
+          tipo: 'numero',
+        },
+        {
+          chave: 'os_abertas',
+          label: 'OS abertas',
+          valor: this.converterInteiro(resumo.os_abertas),
+          tipo: 'numero',
+        },
+        {
+          chave: 'os_fechadas',
+          label: 'OS fechadas',
+          valor: this.converterInteiro(resumo.os_fechadas),
+          tipo: 'numero',
+        },
+        {
+          chave: 'os_canceladas',
+          label: 'OS canceladas (nao entram no custo)',
+          valor: this.converterInteiro(resumo.os_canceladas),
+          tipo: 'numero',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'ordens_servico_custo',
+          titulo: 'Ordens de servico usadas no calculo',
+          descricao:
+            'OS no periodo. Canceladas ficam visiveis para auditoria, mas entram com custo zero no indicador.',
+          colunas: [
+            { chave: 'idOs', label: 'OS', tipo: 'numero' },
+            { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'idFornecedor', label: 'Fornecedor', tipo: 'numero' },
+            { chave: 'dataCadastro', label: 'Data cadastro', tipo: 'data' },
+            { chave: 'dataFechamento', label: 'Data fechamento', tipo: 'data' },
+            { chave: 'situacao', label: 'Situacao', tipo: 'texto' },
+            { chave: 'tipoServico', label: 'Tipo servico', tipo: 'texto' },
+            { chave: 'valorTotal', label: 'Valor total', tipo: 'moeda' },
+          ],
+          linhas: linhasRows.map((row) => ({
+            idOs: this.converterInteiro(row.id_os),
+            idVeiculo: this.converterInteiro(row.id_veiculo),
+            idFornecedor: this.converterInteiro(row.id_fornecedor),
+            dataCadastro: this.converterData(row.data_cadastro),
+            dataFechamento: this.converterData(row.data_fechamento),
+            situacao: this.converterTexto(row.situacao_os),
+            tipoServico: this.converterTexto(row.tipo_servico),
+            valorTotal: this.arredondar(this.converterNumero(row.valor_total)),
+          })),
+        },
+      ],
+    };
+  }
+
+  private async detalharLucroOperacional(
+    manager: EntityManager,
+    idEmpresa: number,
+    periodo: PeriodoConsultaDashboard,
+    colunasAbastecimento: MapaColunasAbastecimentoDashboard,
+  ): Promise<DetalheIndicadorResultado> {
+    const [faturamento, combustivel, manutencao] = await Promise.all([
+      this.detalharFaturamento(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+      ),
+      this.detalharCustoCombustivel(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+        colunasAbastecimento,
+      ),
+      this.detalharCustoManutencao(
+        manager,
+        idEmpresa,
+        periodo.inicio,
+        periodo.fimExclusivo,
+      ),
+    ]);
+
+    const valorIndicador = this.arredondar(
+      faturamento.valorIndicador -
+        combustivel.valorIndicador -
+        manutencao.valorIndicador,
+    );
+
+    return {
+      valorIndicador,
+      composicao: [
+        {
+          chave: 'faturamento',
+          label: 'Faturamento do periodo',
+          valor: this.arredondar(faturamento.valorIndicador),
+          tipo: 'moeda',
+        },
+        {
+          chave: 'custo_combustivel',
+          label: 'Custo combustivel do periodo',
+          valor: this.arredondar(combustivel.valorIndicador),
+          tipo: 'moeda',
+        },
+        {
+          chave: 'custo_manutencao',
+          label: 'Custo manutencao do periodo',
+          valor: this.arredondar(manutencao.valorIndicador),
+          tipo: 'moeda',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'lucro_componentes',
+          titulo: 'Componentes do calculo',
+          colunas: [
+            { chave: 'componente', label: 'Componente', tipo: 'texto' },
+            { chave: 'valor', label: 'Valor', tipo: 'moeda' },
+          ],
+          linhas: [
+            {
+              componente: 'Faturamento',
+              valor: this.arredondar(faturamento.valorIndicador),
+            },
+            {
+              componente: 'Custo combustivel',
+              valor: this.arredondar(combustivel.valorIndicador),
+            },
+            {
+              componente: 'Custo manutencao',
+              valor: this.arredondar(manutencao.valorIndicador),
+            },
+            {
+              componente: 'Lucro operacional estimado',
+              valor: valorIndicador,
+            },
+          ],
+        },
+        ...faturamento.tabelas.slice(0, 1),
+        ...combustivel.tabelas.slice(0, 1),
+        ...manutencao.tabelas.slice(0, 1),
+      ],
+    };
+  }
+
+  private async detalharViagensAbertas(
+    manager: EntityManager,
+    idEmpresa: number,
+    inicio: Date,
+    fimExclusivo: Date,
+  ): Promise<DetalheIndicadorResultado> {
+    const rows = (await manager.query(
+      `
+        SELECT
+          id_viagem,
+          id_veiculo,
+          id_motorista,
+          data_inicio,
+          km_inicial,
+          status,
+          COALESCE(valor_frete, 0)::numeric AS valor_frete
+        FROM app.viagens
+        WHERE id_empresa = $1
+          AND data_inicio >= $2::timestamptz
+          AND data_inicio < $3::timestamptz
+          AND data_fim IS NULL
+        ORDER BY data_inicio DESC, id_viagem DESC
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
+
+    return {
+      valorIndicador: rows.length,
+      composicao: [
+        {
+          chave: 'total_viagens_abertas',
+          label: 'Total de viagens abertas no periodo',
+          valor: rows.length,
+          tipo: 'numero',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'viagens_abertas',
+          titulo: 'Viagens abertas consideradas',
+          colunas: [
+            { chave: 'idViagem', label: 'Viagem', tipo: 'numero' },
+            { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'idMotorista', label: 'Motorista', tipo: 'numero' },
+            { chave: 'dataInicio', label: 'Data inicio', tipo: 'data' },
+            { chave: 'kmInicial', label: 'KM inicial', tipo: 'numero' },
+            { chave: 'status', label: 'Status', tipo: 'texto' },
+            { chave: 'valorFrete', label: 'Valor frete', tipo: 'moeda' },
+          ],
+          linhas: rows.map((row) => ({
+            idViagem: this.converterInteiro(row.id_viagem),
+            idVeiculo: this.converterInteiro(row.id_veiculo),
+            idMotorista: this.converterInteiro(row.id_motorista),
+            dataInicio: this.converterData(row.data_inicio),
+            kmInicial: this.converterInteiro(row.km_inicial),
+            status: this.converterTexto(row.status),
+            valorFrete: this.arredondar(this.converterNumero(row.valor_frete)),
+          })),
+        },
+      ],
+    };
+  }
+
+  private async detalharAlertasCriticos(
+    manager: EntityManager,
+    idEmpresa: number,
+    periodo: PeriodoConsultaDashboard,
+    colunasVeiculo: MapaColunasVeiculoDashboard,
+  ): Promise<DetalheIndicadorResultado> {
+    const [resumo, cnh, documentoVeiculo, osAbertasAntigas] = await Promise.all([
+      this.carregarResumoAlertas(
+        manager,
+        idEmpresa,
+        periodo.diasAlertaDocumentos,
+        periodo.diasOsAbertasCriticas,
+        colunasVeiculo,
+      ),
+      this.carregarAlertasCnhDetalhes(
+        manager,
+        idEmpresa,
+        periodo.diasAlertaDocumentos,
+        50,
+      ),
+      this.carregarAlertasDocumentoVeiculoDetalhes(
+        manager,
+        idEmpresa,
+        periodo.diasAlertaDocumentos,
+        50,
+        colunasVeiculo,
+      ),
+      this.carregarOsAbertasAntigas(manager, idEmpresa, 50),
+    ]);
+
+    const totalCriticos =
+      resumo.cnhVencida +
+      resumo.documentosVeiculoVencidos +
+      resumo.osAbertasCriticas;
+
+    return {
+      valorIndicador: totalCriticos,
+      composicao: [
+        {
+          chave: 'cnh_vencida',
+          label: 'CNHs vencidas',
+          valor: resumo.cnhVencida,
+          tipo: 'numero',
+        },
+        {
+          chave: 'documentos_vencidos',
+          label: 'Documentos de veiculo vencidos',
+          valor: resumo.documentosVeiculoVencidos,
+          tipo: 'numero',
+        },
+        {
+          chave: 'os_abertas_criticas',
+          label: 'OS abertas criticas',
+          valor: resumo.osAbertasCriticas,
+          tipo: 'numero',
+        },
+      ],
+      tabelas: [
+        {
+          id: 'alertas_cnh',
+          titulo: 'Motoristas com alerta de CNH',
+          colunas: [
+            { chave: 'idMotorista', label: 'Motorista', tipo: 'numero' },
+            { chave: 'nome', label: 'Nome', tipo: 'texto' },
+            { chave: 'validadeCnh', label: 'Validade CNH', tipo: 'data' },
+            { chave: 'status', label: 'Status', tipo: 'texto' },
+            { chave: 'vencida', label: 'Vencida', tipo: 'texto' },
+          ],
+          linhas: cnh.map((item) => ({
+            idMotorista: item.idMotorista,
+            nome: item.nome,
+            validadeCnh: item.validadeCnh,
+            status: item.status,
+            vencida: item.vencida ? 'SIM' : 'NAO',
+          })),
+        },
+        {
+          id: 'alertas_documento_veiculo',
+          titulo: 'Veiculos com documento em alerta',
+          colunas: [
+            { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'placa', label: 'Placa', tipo: 'texto' },
+            { chave: 'dataVencimento', label: 'Vencimento', tipo: 'data' },
+            { chave: 'vencido', label: 'Vencido', tipo: 'texto' },
+          ],
+          linhas: documentoVeiculo.map((item) => ({
+            idVeiculo: item.idVeiculo,
+            placa: item.placa,
+            dataVencimento: item.dataVencimento,
+            vencido: item.vencido ? 'SIM' : 'NAO',
+          })),
+        },
+        {
+          id: 'alertas_os_abertas',
+          titulo: 'Ordens de servico abertas antigas',
+          colunas: [
+            { chave: 'idOs', label: 'OS', tipo: 'numero' },
+            { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'dataCadastro', label: 'Data cadastro', tipo: 'data' },
+            { chave: 'diasEmAberto', label: 'Dias em aberto', tipo: 'numero' },
+            { chave: 'valorTotal', label: 'Valor', tipo: 'moeda' },
+          ],
+          linhas: osAbertasAntigas.map((item) => ({
+            idOs: item.idOs,
+            idVeiculo: item.idVeiculo,
+            dataCadastro: item.dataCadastro,
+            diasEmAberto: item.diasEmAberto,
+            valorTotal: item.valorTotal,
+          })),
+        },
+      ],
+    };
   }
 
   private async carregarMetricasPeriodo(
