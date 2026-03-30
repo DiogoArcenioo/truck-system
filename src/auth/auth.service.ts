@@ -262,7 +262,7 @@ export class AuthService {
       emailEmpresa: this.normalizarTextoMaiusculo(dados.emailEmpresa),
       telefoneEmpresa: this.normalizarTextoMaiusculo(dados.telefoneEmpresa),
       ativo: dados.ativo ?? true,
-      status: this.normalizarTextoMinusculo(dados.status ?? 'trial'),
+      status: 'trial',
       plano: this.normalizarTextoMinusculo(dados.plano ?? 'basico'),
       usuarioAtualizacao: this.normalizarTextoMaiusculo(
         dados.usuarioAtualizacao ?? 'SISTEMA',
