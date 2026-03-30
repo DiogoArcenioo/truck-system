@@ -1,5 +1,6 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { AtivarAssinaturaDto } from './dto/ativar-assinatura.dto';
 import { CreateEmpresaDto } from './dto/create-empresa.dto';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { LoginDto } from './dto/login.dto';
@@ -25,5 +26,11 @@ export class AuthController {
   @UseGuards(InternalTokenGuard)
   async login(@Body() dados: LoginDto) {
     return this.authService.login(dados);
+  }
+
+  @Post('ativar-assinatura')
+  @UseGuards(InternalTokenGuard)
+  async ativarAssinatura(@Body() dados: AtivarAssinaturaDto) {
+    return this.authService.ativarAssinatura(dados);
   }
 }

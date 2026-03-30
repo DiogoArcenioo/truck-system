@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
+import { AssinaturaAcessoInterceptor } from './auth/interceptors/assinatura-acesso.interceptor';
 import { AbastecimentosModule } from './abastecimentos/abastecimentos.module';
 import { CombustiveisModule } from './combustiveis/combustiveis.module';
 import { CorVeiculoModule } from './cor-veiculo/cor-veiculo.module';
@@ -80,5 +82,11 @@ import { ViagensModule } from './viagens/viagens.module';
     DashboardModule,
   ],
   controllers: [HealthController],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AssinaturaAcessoInterceptor,
+    },
+  ],
 })
 export class AppModule {}

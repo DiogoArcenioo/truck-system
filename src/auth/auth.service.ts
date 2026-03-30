@@ -8,11 +8,13 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { QueryFailedError, Repository } from 'typeorm';
+import { AtivarAssinaturaDto } from './dto/ativar-assinatura.dto';
 import { CreateEmpresaDto } from './dto/create-empresa.dto';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { LoginDto } from './dto/login.dto';
 import { EmpresaEntity } from './entities/empresa.entity';
 import { UsuarioEntity } from './entities/usuario.entity';
+import { avaliarLicencaEmpresa } from './licenca.util';
 
 @Injectable()
 export class AuthService {
@@ -67,6 +69,11 @@ export class AuthService {
           nomeFantasia: empresa.nomeFantasia,
           slug: empresa.slug,
         },
+        licenca: avaliarLicencaEmpresa({
+          status: empresa.status,
+          plano: empresa.plano,
+          criadoEm: empresa.criadoEm,
+        }),
       };
     } catch (error) {
       this.tratarErroCadastro(error);
@@ -141,6 +148,12 @@ export class AuthService {
       throw new UnauthorizedException('Empresa vinculada nao disponivel.');
     }
 
+    const licenca = avaliarLicencaEmpresa({
+      status: empresa.status,
+      plano: empresa.plano,
+      criadoEm: empresa.criadoEm,
+    });
+
     const expiresIn = this.parseJwtExpiresInToSeconds(
       this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m',
     );
@@ -175,6 +188,68 @@ export class AuthService {
         idEmpresa: Number(empresa.idEmpresa),
         codigoEmpresa: empresa.codigo,
       },
+      licenca,
+    };
+  }
+
+  async obterStatusLicenca(idEmpresa: number) {
+    const empresa = await this.empresaRepository.findOne({
+      where: { idEmpresa: String(idEmpresa) },
+    });
+
+    if (!empresa || !empresa.ativo) {
+      throw new UnauthorizedException('Empresa vinculada nao disponivel.');
+    }
+
+    const licenca = avaliarLicencaEmpresa({
+      status: empresa.status,
+      plano: empresa.plano,
+      criadoEm: empresa.criadoEm,
+    });
+
+    return {
+      sucesso: true,
+      licenca: {
+        ...licenca,
+        idEmpresa: Number(empresa.idEmpresa),
+        codigoEmpresa: empresa.codigo,
+      },
+    };
+  }
+
+  async ativarAssinatura(dados: AtivarAssinaturaDto) {
+    const empresa = await this.empresaRepository.findOne({
+      where: { idEmpresa: String(dados.idEmpresa) },
+    });
+
+    if (!empresa) {
+      throw new BadRequestException('Empresa informada nao existe.');
+    }
+
+    empresa.ativo = true;
+    empresa.status = 'ativo';
+    empresa.plano = this.normalizarTextoMinusculo(dados.plano ?? empresa.plano);
+    empresa.usuarioAtualizacao = this.normalizarTextoMaiusculo(
+      dados.usuarioAtualizacao ?? 'ASSINATURA_MANUAL',
+    );
+
+    const empresaAtualizada = await this.empresaRepository.save(empresa);
+    const licenca = avaliarLicencaEmpresa({
+      status: empresaAtualizada.status,
+      plano: empresaAtualizada.plano,
+      criadoEm: empresaAtualizada.criadoEm,
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Assinatura ativada com sucesso.',
+      empresa: {
+        idEmpresa: Number(empresaAtualizada.idEmpresa),
+        codigo: empresaAtualizada.codigo,
+        status: empresaAtualizada.status,
+        plano: empresaAtualizada.plano,
+      },
+      licenca,
     };
   }
 
@@ -187,7 +262,7 @@ export class AuthService {
       emailEmpresa: this.normalizarTextoMaiusculo(dados.emailEmpresa),
       telefoneEmpresa: this.normalizarTextoMaiusculo(dados.telefoneEmpresa),
       ativo: dados.ativo ?? true,
-      status: this.normalizarTextoMinusculo(dados.status ?? 'ativo'),
+      status: this.normalizarTextoMinusculo(dados.status ?? 'trial'),
       plano: this.normalizarTextoMinusculo(dados.plano ?? 'basico'),
       usuarioAtualizacao: this.normalizarTextoMaiusculo(
         dados.usuarioAtualizacao ?? 'SISTEMA',
