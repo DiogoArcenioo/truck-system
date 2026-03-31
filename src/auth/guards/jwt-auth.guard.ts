@@ -16,8 +16,14 @@ type JwtPayloadBruto = {
   sub?: unknown;
   idEmpresa?: unknown;
   codigoEmpresa?: unknown;
+  nomeEmpresa?: unknown;
   email?: unknown;
   perfil?: unknown;
+  sessao?: unknown;
+  licencaModo?: unknown;
+  licencaTerminoEm?: unknown;
+  licencaDiasTrial?: unknown;
+  licencaDiasRestantes?: unknown;
   iss?: unknown;
   iat?: unknown;
   exp?: unknown;
@@ -28,8 +34,14 @@ export type JwtUsuarioPayload = {
   sub: number;
   idEmpresa: number;
   codigoEmpresa: string;
+  nomeEmpresa?: string;
   email: string;
   perfil: string;
+  sessao?: number;
+  licencaModo?: string;
+  licencaTerminoEm?: string;
+  licencaDiasTrial?: number;
+  licencaDiasRestantes?: number;
   iss?: string;
   iat?: number;
   exp?: number;
@@ -135,15 +147,29 @@ export class JwtAuthGuard implements CanActivate {
       payload.codigoEmpresa,
       'codigoEmpresa',
     );
+    const nomeEmpresa = this.validarTextoOpcional(payload.nomeEmpresa);
     const email = this.validarTexto(payload.email, 'email');
     const perfil = this.validarTexto(payload.perfil, 'perfil');
+    const sessao = this.validarNumeroPositivoOpcional(payload.sessao);
+    const licencaDiasTrial = this.validarNumeroPositivoOpcional(
+      payload.licencaDiasTrial,
+    );
+    const licencaDiasRestantes = this.validarNumeroNaoNegativoOpcional(
+      payload.licencaDiasRestantes,
+    );
 
     return {
       sub,
       idEmpresa,
       codigoEmpresa,
+      nomeEmpresa,
       email,
       perfil,
+      sessao,
+      licencaModo: this.validarTextoOpcional(payload.licencaModo),
+      licencaTerminoEm: this.validarTextoOpcional(payload.licencaTerminoEm),
+      licencaDiasTrial,
+      licencaDiasRestantes,
       iss: typeof payload.iss === 'string' ? payload.iss : undefined,
       iat: iat ?? undefined,
       exp,
@@ -186,6 +212,33 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     return valor.trim();
+  }
+
+  private validarTextoOpcional(valor: unknown): string | undefined {
+    if (typeof valor !== 'string') {
+      return undefined;
+    }
+
+    const texto = valor.trim();
+    return texto.length > 0 ? texto : undefined;
+  }
+
+  private validarNumeroPositivoOpcional(valor: unknown): number | undefined {
+    const numero = this.toNumero(valor);
+    if (!numero || numero <= 0) {
+      return undefined;
+    }
+    return Math.trunc(numero);
+  }
+
+  private validarNumeroNaoNegativoOpcional(
+    valor: unknown,
+  ): number | undefined {
+    const numero = this.toNumero(valor);
+    if (numero === null || numero < 0) {
+      return undefined;
+    }
+    return Math.trunc(numero);
   }
 
   private toNumero(valor: unknown): number | null {

@@ -6,10 +6,11 @@ import { EmpresaEntity } from './entities/empresa.entity';
 import { UsuarioEntity } from './entities/usuario.entity';
 import { InternalTokenGuard } from './guards/internal-token.guard';
 import { LicencaController } from './licenca.controller';
+import { UsuariosController } from './usuarios.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([EmpresaEntity, UsuarioEntity])],
-  controllers: [AuthController, LicencaController],
+  controllers: [AuthController, LicencaController, UsuariosController],
   providers: [AuthService, InternalTokenGuard],
 })
 export class AuthModule {}

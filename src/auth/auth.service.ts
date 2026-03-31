@@ -9,6 +9,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { QueryFailedError, Repository } from 'typeorm';
 import { AtivarAssinaturaDto } from './dto/ativar-assinatura.dto';
+import { AtualizarUsuarioSistemaDto } from './dto/atualizar-usuario-sistema.dto';
+import { CriarUsuarioSistemaDto } from './dto/criar-usuario-sistema.dto';
 import { CreateEmpresaDto } from './dto/create-empresa.dto';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { LoginDto } from './dto/login.dto';
@@ -153,6 +155,7 @@ export class AuthService {
       plano: empresa.plano,
       criadoEm: empresa.criadoEm,
     });
+    const sessaoIniciadaEm = new Date();
 
     const expiresIn = this.parseJwtExpiresInToSeconds(
       this.configService.get<string>('JWT_EXPIRES_IN') ?? '15m',
@@ -163,14 +166,20 @@ export class AuthService {
         sub: Number(usuario.idUsuario),
         idEmpresa: Number(empresa.idEmpresa),
         codigoEmpresa: empresa.codigo,
+        nomeEmpresa: empresa.nomeFantasia,
         email: usuario.email,
         perfil: usuario.perfil,
+        sessao: sessaoIniciadaEm.getTime(),
+        licencaModo: licenca.modoAcesso,
+        licencaTerminoEm: licenca.trialTerminoEm ?? undefined,
+        licencaDiasTrial: licenca.diasTrial,
+        licencaDiasRestantes: licenca.diasRestantesTrial,
       },
       expiresIn,
     );
 
     await this.usuarioRepository.update(usuario.idUsuario, {
-      ultimoLoginEm: new Date(),
+      ultimoLoginEm: sessaoIniciadaEm,
       usuarioAtualizacao: 'AUTH_LOGIN',
     });
 
@@ -253,6 +262,100 @@ export class AuthService {
     };
   }
 
+  async listarUsuariosEmpresa(idEmpresa: number) {
+    const usuarios = await this.usuarioRepository.find({
+      where: { idEmpresa: String(idEmpresa) },
+      order: { nome: 'ASC' },
+    });
+
+    return {
+      sucesso: true,
+      total: usuarios.length,
+      usuarios: usuarios.map((usuario) => this.mapearUsuarioSistema(usuario)),
+    };
+  }
+
+  async cadastrarUsuarioSistema(
+    idEmpresa: number,
+    dados: CriarUsuarioSistemaDto,
+    usuarioAtualizacao: string,
+  ) {
+    return this.registrarUsuario({
+      idEmpresa,
+      nome: dados.nome,
+      email: dados.email,
+      senha: dados.senha,
+      perfil: this.normalizarPerfilSistema(dados.perfil),
+      ativo: dados.ativo ?? true,
+      usuarioAtualizacao,
+    });
+  }
+
+  async atualizarUsuarioSistema(
+    idEmpresa: number,
+    idUsuario: number,
+    dados: AtualizarUsuarioSistemaDto,
+    usuarioAtualizacao: string,
+    idUsuarioLogado: number,
+  ) {
+    const usuario = await this.usuarioRepository.findOne({
+      where: { idUsuario: String(idUsuario), idEmpresa: String(idEmpresa) },
+    });
+
+    if (!usuario) {
+      throw new BadRequestException(
+        'Usuario nao encontrado para a empresa logada.',
+      );
+    }
+
+    if (dados.ativo === false && idUsuarioLogado === Number(usuario.idUsuario)) {
+      throw new BadRequestException(
+        'O usuario logado nao pode desativar o proprio acesso.',
+      );
+    }
+
+    if (dados.nome !== undefined) {
+      usuario.nome = this.normalizarTextoMaiusculo(dados.nome);
+    }
+
+    if (dados.email !== undefined) {
+      usuario.email = this.normalizarTextoMaiusculo(dados.email);
+    }
+
+    if (dados.senha !== undefined) {
+      const senha = dados.senha.trim();
+      if (!this.senhaForte(senha)) {
+        throw new BadRequestException(
+          'A senha deve ter no minimo 8 caracteres, incluindo maiuscula, minuscula, numero e simbolo.',
+        );
+      }
+      usuario.senhaHash = this.gerarHashDaSenha(senha);
+    }
+
+    if (dados.perfil !== undefined) {
+      usuario.perfil = this.normalizarPerfilSistema(dados.perfil);
+    }
+
+    if (dados.ativo !== undefined) {
+      usuario.ativo = dados.ativo;
+    }
+
+    usuario.usuarioAtualizacao = this.normalizarTextoMaiusculo(
+      dados.usuarioAtualizacao ?? usuarioAtualizacao,
+    );
+
+    try {
+      const atualizado = await this.usuarioRepository.save(usuario);
+      return {
+        sucesso: true,
+        mensagem: 'Usuario atualizado com sucesso.',
+        usuario: this.mapearUsuarioSistema(atualizado),
+      };
+    } catch (error) {
+      this.tratarErroCadastroUsuario(error);
+    }
+  }
+
   private normalizarEntrada(dados: CreateEmpresaDto): CreateEmpresaDto {
     return {
       ...dados,
@@ -268,6 +371,31 @@ export class AuthService {
         dados.usuarioAtualizacao ?? 'SISTEMA',
       ),
     };
+  }
+
+  private mapearUsuarioSistema(usuario: UsuarioEntity) {
+    return {
+      idUsuario: Number(usuario.idUsuario),
+      idEmpresa: Number(usuario.idEmpresa),
+      nome: usuario.nome,
+      email: usuario.email,
+      perfil: usuario.perfil,
+      ativo: usuario.ativo,
+      ultimoLoginEm: usuario.ultimoLoginEm?.toISOString() ?? null,
+      criadoEm: usuario.criadoEm?.toISOString() ?? null,
+      atualizadoEm: usuario.atualizadoEm?.toISOString() ?? null,
+    };
+  }
+
+  private normalizarPerfilSistema(perfil: string | undefined) {
+    const valor = (perfil ?? 'OPERADOR').trim().toUpperCase();
+    if (!['ADM', 'GESTOR', 'OPERADOR'].includes(valor)) {
+      throw new BadRequestException(
+        'Perfil invalido. Valores permitidos: ADM, GESTOR, OPERADOR.',
+      );
+    }
+
+    return valor;
   }
 
   private normalizarEntradaUsuario(dados: CreateUsuarioDto): CreateUsuarioDto {
@@ -509,8 +637,14 @@ export class AuthService {
       sub: number;
       idEmpresa: number;
       codigoEmpresa: string;
+      nomeEmpresa?: string;
       email: string;
       perfil: string;
+      sessao?: number;
+      licencaModo?: string;
+      licencaTerminoEm?: string;
+      licencaDiasTrial?: number;
+      licencaDiasRestantes?: number;
     },
     expiresInSeconds: number,
   ): string {

@@ -9,6 +9,7 @@ import {
 import { Observable } from 'rxjs';
 import { DataSource } from 'typeorm';
 import { EmpresaEntity } from '../entities/empresa.entity';
+import { UsuarioEntity } from '../entities/usuario.entity';
 import { JwtUsuarioPayload } from '../guards/jwt-auth.guard';
 import { avaliarLicencaEmpresa } from '../licenca.util';
 
@@ -32,8 +33,45 @@ export class AssinaturaAcessoInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest<RequestComUsuario>();
     const usuario = request?.usuario;
 
-    if (!usuario || this.ehMetodoSomenteLeitura(request.method)) {
+    if (!usuario) {
       return next.handle();
+    }
+
+    const usuarioAtual = await this.dataSource.getRepository(UsuarioEntity).findOne({
+      select: {
+        idUsuario: true,
+        idEmpresa: true,
+        perfil: true,
+        ativo: true,
+        ultimoLoginEm: true,
+      },
+      where: {
+        idUsuario: String(usuario.sub),
+        idEmpresa: String(usuario.idEmpresa),
+      },
+    });
+
+    if (!usuarioAtual || !usuarioAtual.ativo) {
+      throw new UnauthorizedException('Usuario nao disponivel para a empresa logada.');
+    }
+
+    if (!this.sessaoTokenValida(usuario.sessao, usuarioAtual.ultimoLoginEm)) {
+      throw new UnauthorizedException(
+        'Sua sessao foi encerrada porque houve um novo login com esta conta.',
+      );
+    }
+
+    const perfilAtual = (usuarioAtual.perfil ?? usuario.perfil).trim().toUpperCase();
+    request.usuario = { ...usuario, perfil: perfilAtual };
+
+    if (this.ehMetodoSomenteLeitura(request.method)) {
+      return next.handle();
+    }
+
+    if (!['ADM', 'GESTOR'].includes(perfilAtual)) {
+      throw new ForbiddenException(
+        'Seu perfil nao possui permissao para cadastrar, editar ou excluir dados.',
+      );
     }
 
     const empresa = await this.dataSource.getRepository(EmpresaEntity).findOne({
@@ -71,5 +109,18 @@ export class AssinaturaAcessoInterceptor implements NestInterceptor {
 
     const metodo = method.trim().toUpperCase();
     return metodo === 'GET' || metodo === 'HEAD' || metodo === 'OPTIONS';
+  }
+
+  private sessaoTokenValida(
+    sessaoToken: number | undefined,
+    ultimoLoginEm: Date | null,
+  ) {
+    if (!sessaoToken || !ultimoLoginEm) {
+      return true;
+    }
+
+    const tokenMs = Math.trunc(sessaoToken);
+    const ultimoLoginMs = Math.trunc(ultimoLoginEm.getTime());
+    return tokenMs === ultimoLoginMs;
   }
 }
