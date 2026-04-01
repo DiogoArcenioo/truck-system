@@ -1,13 +1,16 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   ParseIntPipe,
+  Post,
   Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
+import { CriarMarcaVeiculoDto } from './dto/criar-marca-veiculo.dto';
 import { MarcaVeiculoService } from './marca-veiculo.service';
 
 type RequisicaoAutenticada = {
@@ -23,6 +26,15 @@ export class MarcaVeiculoController {
   async listarTodos(@Req() request: RequisicaoAutenticada) {
     const usuario = this.obterUsuarioAutenticado(request);
     return this.marcaVeiculoService.listarTodos(usuario.idEmpresa);
+  }
+
+  @Post()
+  async cadastrar(
+    @Req() request: RequisicaoAutenticada,
+    @Body() dados: CriarMarcaVeiculoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.marcaVeiculoService.cadastrar(usuario.idEmpresa, dados, usuario);
   }
 
   @Get(':idMarca')

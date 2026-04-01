@@ -164,6 +164,7 @@ export class FornecedorService {
     try {
       return await this.executarComRls(idEmpresa, async (manager) => {
         const payload = this.normalizarFornecedorCriacao(dados, usuarioJwt);
+        await this.validarDocumentoDuplicadoEmpresa(manager, idEmpresa, payload);
         const rows = (await manager.query(
           `
             INSERT INTO app.fornecedor (
@@ -221,6 +222,12 @@ export class FornecedorService {
           idFornecedor,
         );
         const payload = this.normalizarFornecedorAtualizacao(dados, usuarioJwt, atual);
+        await this.validarDocumentoDuplicadoEmpresa(
+          manager,
+          idEmpresa,
+          payload,
+          idFornecedor,
+        );
 
         const rows = (await manager.query(
           `
@@ -796,6 +803,66 @@ export class FornecedorService {
     await this.marcarEnderecoPrincipal(manager, idFornecedor, primeiro);
   }
 
+  private async validarDocumentoDuplicadoEmpresa(
+    manager: EntityManager,
+    idEmpresa: number,
+    payload: PayloadFornecedor,
+    idFornecedorAtual?: number,
+  ) {
+    const filtrosDocumento: string[] = [];
+    const valores: Array<string | number> = [String(idEmpresa)];
+
+    if (payload.cnpj) {
+      valores.push(payload.cnpj);
+      filtrosDocumento.push(`cnpj = $${valores.length}`);
+    }
+
+    if (payload.cpf) {
+      valores.push(payload.cpf);
+      filtrosDocumento.push(`cpf = $${valores.length}`);
+    }
+
+    if (filtrosDocumento.length === 0) {
+      return;
+    }
+
+    let sql = `
+      SELECT id_fornecedor, cnpj, cpf
+      FROM app.fornecedor
+      WHERE id_empresa = $1
+        AND (${filtrosDocumento.join(' OR ')})
+    `;
+
+    if (idFornecedorAtual && Number.isFinite(idFornecedorAtual) && idFornecedorAtual > 0) {
+      valores.push(idFornecedorAtual);
+      sql += ` AND id_fornecedor <> $${valores.length}`;
+    }
+
+    sql += ` LIMIT 1`;
+
+    const rows = (await manager.query(sql, valores)) as RegistroBanco[];
+    const registro = rows[0];
+
+    if (!registro) {
+      return;
+    }
+
+    const cnpjExistente = this.str(registro.cnpj);
+    const cpfExistente = this.str(registro.cpf);
+
+    if (payload.cnpj && cnpjExistente === payload.cnpj) {
+      throw new BadRequestException(
+        'Ja existe fornecedor com este CNPJ na empresa logada.',
+      );
+    }
+
+    if (payload.cpf && cpfExistente === payload.cpf) {
+      throw new BadRequestException(
+        'Ja existe fornecedor com este CPF na empresa logada.',
+      );
+    }
+  }
+
   private normalizarFornecedorCriacao(
     dados: CriarFornecedorDto,
     usuarioJwt: JwtUsuarioPayload,
@@ -1186,6 +1253,32 @@ export class FornecedorService {
         throw new BadRequestException('Registro relacionado nao encontrado para a operacao.');
       }
       if (erroPg.code === '23505') {
+        const detalhe =
+          `${erroPg.detail ?? ''} ${erroPg.message ?? ''}`.toLowerCase();
+        const possuiEscopoEmpresa = detalhe.includes('id_empresa');
+
+        if (detalhe.includes('cnpj')) {
+          if (possuiEscopoEmpresa) {
+            throw new BadRequestException(
+              'Ja existe fornecedor com este CNPJ na empresa logada.',
+            );
+          }
+          throw new BadRequestException(
+            'Conflito de CNPJ detectado no banco em escopo global. Execute o script sql/fornecedor_unicidade_por_empresa.sql para aplicar a regra por empresa.',
+          );
+        }
+
+        if (detalhe.includes('cpf')) {
+          if (possuiEscopoEmpresa) {
+            throw new BadRequestException(
+              'Ja existe fornecedor com este CPF na empresa logada.',
+            );
+          }
+          throw new BadRequestException(
+            'Conflito de CPF detectado no banco em escopo global. Execute o script sql/fornecedor_unicidade_por_empresa.sql para aplicar a regra por empresa.',
+          );
+        }
+
         throw new BadRequestException('Ja existe um registro igual para os dados informados.');
       }
       if (erroPg.code === '23514') {

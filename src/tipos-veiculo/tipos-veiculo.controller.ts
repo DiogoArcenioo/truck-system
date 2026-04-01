@@ -1,13 +1,16 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   ParseIntPipe,
+  Post,
   Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
+import { CriarTipoVeiculoDto } from './dto/criar-tipo-veiculo.dto';
 import { TiposVeiculoService } from './tipos-veiculo.service';
 
 type RequisicaoAutenticada = {
@@ -23,6 +26,15 @@ export class TiposVeiculoController {
   async listarTodos(@Req() request: RequisicaoAutenticada) {
     const usuario = this.obterUsuarioAutenticado(request);
     return this.tiposVeiculoService.listarTodos(usuario.idEmpresa);
+  }
+
+  @Post()
+  async cadastrar(
+    @Req() request: RequisicaoAutenticada,
+    @Body() dados: CriarTipoVeiculoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.tiposVeiculoService.cadastrar(usuario.idEmpresa, dados, usuario);
   }
 
   @Get(':idTipo')

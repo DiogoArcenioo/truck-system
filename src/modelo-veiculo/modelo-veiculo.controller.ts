@@ -1,14 +1,17 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
   ParseIntPipe,
+  Post,
   Query,
   Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
+import { CriarModeloVeiculoDto } from './dto/criar-modelo-veiculo.dto';
 import { FiltroModeloVeiculoDto } from './dto/filtro-modelo-veiculo.dto';
 import { ModeloVeiculoService } from './modelo-veiculo.service';
 
@@ -31,6 +34,15 @@ export class ModeloVeiculoController {
       usuario.idEmpresa,
       filtro.idMarca,
     );
+  }
+
+  @Post()
+  async cadastrar(
+    @Req() request: RequisicaoAutenticada,
+    @Body() dados: CriarModeloVeiculoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.modeloVeiculoService.cadastrar(usuario.idEmpresa, dados, usuario);
   }
 
   @Get(':idModelo')

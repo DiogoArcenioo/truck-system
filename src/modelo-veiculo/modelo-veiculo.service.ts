@@ -3,8 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
+import { JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { configurarContextoEmpresaRls } from '../common/database/rls.util';
+import { CriarModeloVeiculoDto } from './dto/criar-modelo-veiculo.dto';
 import { ListarModeloVeiculoDto } from './dto/listar-modelo-veiculo.dto';
 
 type RegistroBanco = Record<string, unknown>;
@@ -15,6 +17,9 @@ type MapaColunasModeloVeiculo = {
   descricao: string;
   status: string | null;
   idEmpresa: string | null;
+  usuarioAtualizacao: string | null;
+  criadoEm: string | null;
+  atualizadoEm: string | null;
 };
 
 @Injectable()
@@ -53,6 +58,87 @@ export class ModeloVeiculoService {
         modelos,
       };
     });
+  }
+
+  async cadastrar(
+    idEmpresa: number,
+    dados: CriarModeloVeiculoDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (manager, colunas) => {
+        const colunaMarca = this.exigirColuna(colunas.idMarca, 'idMarca');
+        const descricao = this.normalizarDescricao(dados.descricao);
+        const status = this.normalizarStatus(dados.status);
+        const usuarioAtualizacao = this.normalizarUsuario(
+          dados.usuarioAtualizacao ?? usuarioJwt.email,
+        );
+
+        await this.validarDuplicidadeDescricao(
+          manager,
+          colunas,
+          idEmpresa,
+          dados.idMarca,
+          descricao,
+        );
+
+        const insertCols: string[] = [];
+        const values: Array<string | number> = [];
+        const placeholders: string[] = [];
+
+        const addValue = (coluna: string, valor: string | number) => {
+          insertCols.push(this.quote(coluna));
+          values.push(valor);
+          placeholders.push(`$${values.length}`);
+        };
+
+        addValue(colunaMarca, dados.idMarca);
+        addValue(colunas.descricao, descricao);
+
+        if (colunas.status) {
+          addValue(colunas.status, status);
+        }
+
+        if (colunas.idEmpresa) {
+          addValue(colunas.idEmpresa, String(idEmpresa));
+        }
+
+        if (colunas.usuarioAtualizacao) {
+          addValue(colunas.usuarioAtualizacao, usuarioAtualizacao);
+        }
+
+        if (colunas.criadoEm) {
+          insertCols.push(this.quote(colunas.criadoEm));
+          placeholders.push('NOW()');
+        }
+
+        if (colunas.atualizadoEm) {
+          insertCols.push(this.quote(colunas.atualizadoEm));
+          placeholders.push('NOW()');
+        }
+
+        const sql = `
+          INSERT INTO app.modelo_vei (${insertCols.join(', ')})
+          VALUES (${placeholders.join(', ')})
+          RETURNING *
+        `;
+
+        const rows = await manager.query(sql, values);
+        const registro = rows[0];
+
+        if (!registro) {
+          throw new BadRequestException('Falha ao cadastrar modelo de veiculo.');
+        }
+
+        return {
+          sucesso: true,
+          mensagem: 'Modelo de veiculo cadastrado com sucesso.',
+          modelo: this.mapear(registro, colunas),
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error);
+    }
   }
 
   async buscarPorId(idEmpresa: number, idModelo: number) {
@@ -151,6 +237,24 @@ export class ModeloVeiculoService {
         false,
       ),
       idEmpresa: this.encontrarColuna(set, ['id_empresa'], '', false),
+      usuarioAtualizacao: this.encontrarColuna(
+        set,
+        ['usuario_atualizacao', 'usuario_update', 'usuario'],
+        '',
+        false,
+      ),
+      criadoEm: this.encontrarColuna(
+        set,
+        ['criado_em', 'data_cadastro', 'created_at'],
+        '',
+        false,
+      ),
+      atualizadoEm: this.encontrarColuna(
+        set,
+        ['atualizado_em', 'data_atualizacao', 'updated_at'],
+        '',
+        false,
+      ),
     };
   }
 
@@ -194,6 +298,59 @@ export class ModeloVeiculoService {
     };
   }
 
+  private async validarDuplicidadeDescricao(
+    manager: EntityManager,
+    colunas: MapaColunasModeloVeiculo,
+    idEmpresa: number,
+    idMarca: number,
+    descricao: string,
+  ) {
+    const colunaMarca = this.exigirColuna(colunas.idMarca, 'idMarca');
+    const filtros: string[] = [
+      `${this.quote(colunaMarca)} = $1`,
+      `UPPER(${this.quote(colunas.descricao)}) = UPPER($2)`,
+    ];
+    const valores: Array<string | number> = [idMarca, descricao];
+
+    if (colunas.idEmpresa) {
+      valores.push(String(idEmpresa));
+      filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+    }
+
+    const rows = await manager.query(
+      `
+        SELECT 1
+        FROM app.modelo_vei
+        WHERE ${filtros.join(' AND ')}
+        LIMIT 1
+      `,
+      valores,
+    );
+
+    if (rows[0]) {
+      throw new BadRequestException(
+        'Ja existe um modelo com essa descricao para a marca informada na empresa logada.',
+      );
+    }
+  }
+
+  private normalizarDescricao(valor: string) {
+    const texto = valor.trim().toUpperCase();
+    if (!texto) {
+      throw new BadRequestException('Descricao do modelo e obrigatoria.');
+    }
+    return texto;
+  }
+
+  private normalizarStatus(valor: string | undefined) {
+    return valor?.trim().toUpperCase() === 'I' ? 'I' : 'A';
+  }
+
+  private normalizarUsuario(valor: string) {
+    const texto = valor.trim().toUpperCase();
+    return texto.length > 0 ? texto : 'SISTEMA';
+  }
+
   private exigirColuna(coluna: string | null, campoApi: string): string {
     if (!coluna) {
       throw new BadRequestException(
@@ -230,5 +387,24 @@ export class ModeloVeiculoService {
 
     const texto = valor.trim();
     return texto.length > 0 ? texto : null;
+  }
+
+  private tratarErroPersistencia(error: unknown): never {
+    if (error instanceof BadRequestException || error instanceof NotFoundException) {
+      throw error;
+    }
+
+    if (error instanceof QueryFailedError) {
+      const erroPg = error.driverError as { code?: string };
+      if (erroPg.code === '23505') {
+        throw new BadRequestException(
+          'Ja existe um modelo com essa descricao para a marca informada na empresa logada.',
+        );
+      }
+    }
+
+    throw new BadRequestException(
+      'Nao foi possivel cadastrar modelo de veiculo neste momento.',
+    );
   }
 }

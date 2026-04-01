@@ -3,8 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
+import { JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { configurarContextoEmpresaRls } from '../common/database/rls.util';
+import { CriarCorVeiculoDto } from './dto/criar-cor-veiculo.dto';
 import { ListarCorVeiculoDto } from './dto/listar-cor-veiculo.dto';
 
 type RegistroBanco = Record<string, unknown>;
@@ -14,6 +16,9 @@ type MapaColunasCorVeiculo = {
   descricao: string;
   status: string | null;
   idEmpresa: string | null;
+  usuarioAtualizacao: string | null;
+  criadoEm: string | null;
+  atualizadoEm: string | null;
 };
 
 @Injectable()
@@ -46,6 +51,84 @@ export class CorVeiculoService {
         cores,
       };
     });
+  }
+
+  async cadastrar(
+    idEmpresa: number,
+    dados: CriarCorVeiculoDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (manager, colunas) => {
+        const descricao = this.normalizarDescricao(dados.descricao);
+        const status = this.normalizarStatus(dados.status);
+        const usuarioAtualizacao = this.normalizarUsuario(
+          dados.usuarioAtualizacao ?? usuarioJwt.email,
+        );
+
+        await this.validarDuplicidadeDescricao(
+          manager,
+          colunas,
+          idEmpresa,
+          descricao,
+        );
+
+        const insertCols: string[] = [];
+        const values: Array<string | number> = [];
+        const placeholders: string[] = [];
+
+        const addValue = (coluna: string, valor: string | number) => {
+          insertCols.push(this.quote(coluna));
+          values.push(valor);
+          placeholders.push(`$${values.length}`);
+        };
+
+        addValue(colunas.descricao, descricao);
+
+        if (colunas.status) {
+          addValue(colunas.status, status);
+        }
+
+        if (colunas.idEmpresa) {
+          addValue(colunas.idEmpresa, String(idEmpresa));
+        }
+
+        if (colunas.usuarioAtualizacao) {
+          addValue(colunas.usuarioAtualizacao, usuarioAtualizacao);
+        }
+
+        if (colunas.criadoEm) {
+          insertCols.push(this.quote(colunas.criadoEm));
+          placeholders.push('NOW()');
+        }
+
+        if (colunas.atualizadoEm) {
+          insertCols.push(this.quote(colunas.atualizadoEm));
+          placeholders.push('NOW()');
+        }
+
+        const sql = `
+          INSERT INTO app.cor_vei (${insertCols.join(', ')})
+          VALUES (${placeholders.join(', ')})
+          RETURNING *
+        `;
+
+        const rows = await manager.query(sql, values);
+        const registro = rows[0];
+
+        if (!registro) {
+          throw new BadRequestException('Falha ao cadastrar cor de veiculo.');
+        }
+
+        return {
+          sucesso: true,
+          mensagem: 'Cor de veiculo cadastrada com sucesso.',
+          cor: this.mapear(registro, colunas),
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error);
+    }
   }
 
   async buscarPorId(idEmpresa: number, idCor: number) {
@@ -138,6 +221,24 @@ export class CorVeiculoService {
         false,
       ),
       idEmpresa: this.encontrarColuna(set, ['id_empresa'], '', false),
+      usuarioAtualizacao: this.encontrarColuna(
+        set,
+        ['usuario_atualizacao', 'usuario_update', 'usuario'],
+        '',
+        false,
+      ),
+      criadoEm: this.encontrarColuna(
+        set,
+        ['criado_em', 'data_cadastro', 'created_at'],
+        '',
+        false,
+      ),
+      atualizadoEm: this.encontrarColuna(
+        set,
+        ['atualizado_em', 'data_atualizacao', 'updated_at'],
+        '',
+        false,
+      ),
     };
   }
 
@@ -177,6 +278,56 @@ export class CorVeiculoService {
     };
   }
 
+  private async validarDuplicidadeDescricao(
+    manager: EntityManager,
+    colunas: MapaColunasCorVeiculo,
+    idEmpresa: number,
+    descricao: string,
+  ) {
+    const filtros: string[] = [
+      `UPPER(${this.quote(colunas.descricao)}) = UPPER($1)`,
+    ];
+    const valores: Array<string | number> = [descricao];
+
+    if (colunas.idEmpresa) {
+      valores.push(String(idEmpresa));
+      filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+    }
+
+    const rows = await manager.query(
+      `
+        SELECT 1
+        FROM app.cor_vei
+        WHERE ${filtros.join(' AND ')}
+        LIMIT 1
+      `,
+      valores,
+    );
+
+    if (rows[0]) {
+      throw new BadRequestException(
+        'Ja existe uma cor de veiculo com essa descricao para a empresa logada.',
+      );
+    }
+  }
+
+  private normalizarDescricao(valor: string) {
+    const texto = valor.trim().toUpperCase();
+    if (!texto) {
+      throw new BadRequestException('Descricao da cor e obrigatoria.');
+    }
+    return texto;
+  }
+
+  private normalizarStatus(valor: string | undefined) {
+    return valor?.trim().toUpperCase() === 'I' ? 'I' : 'A';
+  }
+
+  private normalizarUsuario(valor: string) {
+    const texto = valor.trim().toUpperCase();
+    return texto.length > 0 ? texto : 'SISTEMA';
+  }
+
   private quote(coluna: string): string {
     if (!/^[a-z_][a-z0-9_]*$/.test(coluna)) {
       throw new BadRequestException(
@@ -203,5 +354,24 @@ export class CorVeiculoService {
 
     const texto = valor.trim();
     return texto.length > 0 ? texto : null;
+  }
+
+  private tratarErroPersistencia(error: unknown): never {
+    if (error instanceof BadRequestException || error instanceof NotFoundException) {
+      throw error;
+    }
+
+    if (error instanceof QueryFailedError) {
+      const erroPg = error.driverError as { code?: string };
+      if (erroPg.code === '23505') {
+        throw new BadRequestException(
+          'Ja existe uma cor de veiculo com essa descricao para a empresa logada.',
+        );
+      }
+    }
+
+    throw new BadRequestException(
+      'Nao foi possivel cadastrar cor de veiculo neste momento.',
+    );
   }
 }
