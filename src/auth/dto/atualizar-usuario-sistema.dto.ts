@@ -2,13 +2,13 @@ import {
   IsBoolean,
   IsEmail,
   IsIn,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
 } from 'class-validator';
-
-const PERFIS_USUARIO = ['ADM', 'GESTOR', 'OPERADOR'] as const;
+import { PERFIS_USUARIO } from '../permissoes.constants';
 
 export class AtualizarUsuarioSistemaDto {
   @IsOptional()
@@ -40,4 +40,8 @@ export class AtualizarUsuarioSistemaDto {
   @IsString()
   @MaxLength(120)
   usuarioAtualizacao?: string;
+
+  @IsOptional()
+  @IsObject()
+  permissoesUsuario?: Record<string, unknown>;
 }

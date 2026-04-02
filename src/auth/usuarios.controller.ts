@@ -1,7 +1,7 @@
 import {
-  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { AtualizarPermissoesDto } from './dto/atualizar-permissoes.dto';
 import { AtualizarUsuarioSistemaDto } from './dto/atualizar-usuario-sistema.dto';
 import { CriarUsuarioSistemaDto } from './dto/criar-usuario-sistema.dto';
 import { JwtAuthGuard, JwtUsuarioPayload } from './guards/jwt-auth.guard';
@@ -28,7 +29,6 @@ export class UsuariosController {
   @Get()
   async listar(@Req() request: RequisicaoAutenticada) {
     const usuario = this.obterUsuarioAutenticado(request);
-    this.exigirPerfilAdm(usuario);
     return this.authService.listarUsuariosEmpresa(usuario.idEmpresa);
   }
 
@@ -38,10 +38,55 @@ export class UsuariosController {
     @Body() dados: CriarUsuarioSistemaDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    this.exigirPerfilAdm(usuario);
     return this.authService.cadastrarUsuarioSistema(
       usuario.idEmpresa,
       dados,
+      usuario.email,
+    );
+  }
+
+  @Put('perfis/:perfil/permissoes')
+  async atualizarPermissoesPerfil(
+    @Req() request: RequisicaoAutenticada,
+    @Param('perfil') perfil: string,
+    @Body() dados: AtualizarPermissoesDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+
+    return this.authService.atualizarPermissoesPerfilSistema(
+      usuario.idEmpresa,
+      perfil,
+      dados.permissoes,
+      dados.usuarioAtualizacao ?? usuario.email,
+    );
+  }
+
+  @Put(':idUsuario/permissoes')
+  async atualizarPermissoesUsuario(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idUsuario', ParseIntPipe) idUsuario: number,
+    @Body() dados: AtualizarPermissoesDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+
+    return this.authService.atualizarPermissoesUsuarioSistema(
+      usuario.idEmpresa,
+      idUsuario,
+      dados.permissoes,
+      dados.usuarioAtualizacao ?? usuario.email,
+    );
+  }
+
+  @Delete(':idUsuario/permissoes')
+  async limparPermissoesUsuario(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idUsuario', ParseIntPipe) idUsuario: number,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+
+    return this.authService.limparPermissoesUsuarioSistema(
+      usuario.idEmpresa,
+      idUsuario,
       usuario.email,
     );
   }
@@ -53,7 +98,6 @@ export class UsuariosController {
     @Body() dados: AtualizarUsuarioSistemaDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    this.exigirPerfilAdm(usuario);
     return this.authService.atualizarUsuarioSistema(
       usuario.idEmpresa,
       idUsuario,
@@ -71,13 +115,5 @@ export class UsuariosController {
     }
 
     return request.usuario;
-  }
-
-  private exigirPerfilAdm(usuario: JwtUsuarioPayload) {
-    if (usuario.perfil.trim().toUpperCase() !== 'ADM') {
-      throw new BadRequestException(
-        'Apenas usuarios com perfil ADM podem gerenciar usuarios do sistema.',
-      );
-    }
   }
 }

@@ -6,6 +6,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
+import {
+  ACOES_PERMISSAO,
+  MODULOS_SISTEMA,
+  PermissoesSistema,
+} from '../permissoes.constants';
 
 type JwtHeader = {
   alg?: string;
@@ -19,6 +24,7 @@ type JwtPayloadBruto = {
   nomeEmpresa?: unknown;
   email?: unknown;
   perfil?: unknown;
+  permissoes?: unknown;
   sessao?: unknown;
   licencaModo?: unknown;
   licencaTerminoEm?: unknown;
@@ -37,6 +43,7 @@ export type JwtUsuarioPayload = {
   nomeEmpresa?: string;
   email: string;
   perfil: string;
+  permissoes?: PermissoesSistema;
   sessao?: number;
   licencaModo?: string;
   licencaTerminoEm?: string;
@@ -150,6 +157,7 @@ export class JwtAuthGuard implements CanActivate {
     const nomeEmpresa = this.validarTextoOpcional(payload.nomeEmpresa);
     const email = this.validarTexto(payload.email, 'email');
     const perfil = this.validarTexto(payload.perfil, 'perfil');
+    const permissoes = this.validarPermissoesOpcional(payload.permissoes);
     const sessao = this.validarNumeroPositivoOpcional(payload.sessao);
     const licencaDiasTrial = this.validarNumeroPositivoOpcional(
       payload.licencaDiasTrial,
@@ -165,6 +173,7 @@ export class JwtAuthGuard implements CanActivate {
       nomeEmpresa,
       email,
       perfil,
+      permissoes,
       sessao,
       licencaModo: this.validarTextoOpcional(payload.licencaModo),
       licencaTerminoEm: this.validarTextoOpcional(payload.licencaTerminoEm),
@@ -254,5 +263,56 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     return null;
+  }
+
+  private validarPermissoesOpcional(
+    valor: unknown,
+  ): PermissoesSistema | undefined {
+    if (valor === undefined || valor === null) {
+      return undefined;
+    }
+
+    if (typeof valor !== 'object' || Array.isArray(valor)) {
+      return undefined;
+    }
+
+    const entrada = valor as Record<string, unknown>;
+    const resultado = {} as PermissoesSistema;
+
+    for (const modulo of MODULOS_SISTEMA) {
+      const moduloValor = entrada[modulo];
+      if (
+        !moduloValor ||
+        typeof moduloValor !== 'object' ||
+        Array.isArray(moduloValor)
+      ) {
+        continue;
+      }
+
+      const moduloObj = moduloValor as Record<string, unknown>;
+      resultado[modulo] = {
+        visualizar: Boolean(moduloObj.visualizar),
+        criar: Boolean(moduloObj.criar),
+        editar: Boolean(moduloObj.editar),
+        excluir: Boolean(moduloObj.excluir),
+      };
+    }
+
+    for (const modulo of MODULOS_SISTEMA) {
+      if (!resultado[modulo]) {
+        resultado[modulo] = {
+          visualizar: false,
+          criar: false,
+          editar: false,
+          excluir: false,
+        };
+      } else {
+        for (const acao of ACOES_PERMISSAO) {
+          resultado[modulo][acao] = Boolean(resultado[modulo][acao]);
+        }
+      }
+    }
+
+    return resultado;
   }
 }

@@ -3,13 +3,13 @@ import {
   IsEmail,
   IsIn,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
 } from 'class-validator';
-
-const PERFIS_USUARIO = ['ADM', 'GESTOR', 'OPERADOR'] as const;
+import { PERFIS_USUARIO } from '../permissoes.constants';
 
 export class CriarUsuarioSistemaDto {
   @IsString()
@@ -39,4 +39,8 @@ export class CriarUsuarioSistemaDto {
   @IsString()
   @MaxLength(120)
   usuarioAtualizacao?: string;
+
+  @IsOptional()
+  @IsObject()
+  permissoesUsuario?: Record<string, unknown>;
 }

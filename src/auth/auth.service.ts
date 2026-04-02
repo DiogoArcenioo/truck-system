@@ -17,6 +17,8 @@ import { LoginDto } from './dto/login.dto';
 import { EmpresaEntity } from './entities/empresa.entity';
 import { UsuarioEntity } from './entities/usuario.entity';
 import { avaliarLicencaEmpresa } from './licenca.util';
+import { PermissoesParciaisSistema, PermissoesSistema } from './permissoes.constants';
+import { PermissoesService } from './permissoes.service';
 
 @Injectable()
 export class AuthService {
@@ -28,6 +30,7 @@ export class AuthService {
     private readonly empresaRepository: Repository<EmpresaEntity>,
     @InjectRepository(UsuarioEntity)
     private readonly usuarioRepository: Repository<UsuarioEntity>,
+    private readonly permissoesService: PermissoesService,
   ) {}
 
   async registrarEmpresa(dados: CreateEmpresaDto) {
@@ -155,6 +158,12 @@ export class AuthService {
       plano: empresa.plano,
       criadoEm: empresa.criadoEm,
     });
+    const permissoesEfetivas =
+      await this.permissoesService.obterPermissoesEfetivasUsuario(
+        Number(empresa.idEmpresa),
+        Number(usuario.idUsuario),
+        usuario.perfil,
+      );
     const sessaoIniciadaEm = new Date();
 
     const expiresIn = this.parseJwtExpiresInToSeconds(
@@ -169,6 +178,7 @@ export class AuthService {
         nomeEmpresa: empresa.nomeFantasia,
         email: usuario.email,
         perfil: usuario.perfil,
+        permissoes: permissoesEfetivas,
         sessao: sessaoIniciadaEm.getTime(),
         licencaModo: licenca.modoAcesso,
         licencaTerminoEm: licenca.trialTerminoEm ?? undefined,
@@ -194,6 +204,7 @@ export class AuthService {
         nome: usuario.nome,
         email: usuario.email,
         perfil: usuario.perfil,
+        permissoes: permissoesEfetivas,
         idEmpresa: Number(empresa.idEmpresa),
         codigoEmpresa: empresa.codigo,
       },
@@ -267,11 +278,144 @@ export class AuthService {
       where: { idEmpresa: String(idEmpresa) },
       order: { nome: 'ASC' },
     });
+    const configuracaoPermissoes =
+      await this.permissoesService.listarPermissoesEmpresa(idEmpresa);
 
     return {
       sucesso: true,
       total: usuarios.length,
-      usuarios: usuarios.map((usuario) => this.mapearUsuarioSistema(usuario)),
+      modulosPermissao: configuracaoPermissoes.modulos,
+      permissoesPerfil: configuracaoPermissoes.perfis,
+      usuarios: usuarios.map((usuario) => {
+        const perfil = this.permissoesService.normalizarPerfil(usuario.perfil);
+        const overrideUsuario =
+          perfil === 'ADM'
+            ? null
+            : (configuracaoPermissoes.overridesUsuarios[
+                Number(usuario.idUsuario)
+              ] ?? null);
+        const permissoesEfetivas =
+          perfil === 'ADM'
+            ? configuracaoPermissoes.perfis.ADM
+            : this.permissoesService.combinarPermissoes(
+                configuracaoPermissoes.perfis[perfil],
+                overrideUsuario,
+              );
+
+        return this.mapearUsuarioSistema(usuario, {
+          permissoesUsuario: overrideUsuario,
+          permissoesEfetivas,
+        });
+      }),
+    };
+  }
+
+  async atualizarPermissoesPerfilSistema(
+    idEmpresa: number,
+    perfil: string,
+    permissoes: unknown,
+    usuarioAtualizacao: string,
+  ) {
+    const perfilNormalizado = this.permissoesService.normalizarPerfil(perfil);
+    const permissoesAtualizadas =
+      await this.permissoesService.atualizarPermissoesPerfil(
+        idEmpresa,
+        perfilNormalizado,
+        permissoes,
+        this.normalizarTextoMaiusculo(usuarioAtualizacao),
+      );
+
+    return {
+      sucesso: true,
+      mensagem: `Permissoes do perfil ${perfilNormalizado} atualizadas com sucesso.`,
+      perfil: perfilNormalizado,
+      permissoes: permissoesAtualizadas,
+    };
+  }
+
+  async atualizarPermissoesUsuarioSistema(
+    idEmpresa: number,
+    idUsuario: number,
+    permissoes: unknown,
+    usuarioAtualizacao: string,
+  ) {
+    const usuario = await this.usuarioRepository.findOne({
+      where: { idUsuario: String(idUsuario), idEmpresa: String(idEmpresa) },
+    });
+
+    if (!usuario) {
+      throw new BadRequestException(
+        'Usuario nao encontrado para a empresa logada.',
+      );
+    }
+
+    if (this.permissoesService.normalizarPerfil(usuario.perfil) === 'ADM') {
+      throw new BadRequestException(
+        'Usuarios com perfil ADM possuem acesso total fixo.',
+      );
+    }
+
+    const permissoesUsuario =
+      await this.permissoesService.atualizarPermissoesUsuario(
+        idEmpresa,
+        idUsuario,
+        permissoes,
+        this.normalizarTextoMaiusculo(usuarioAtualizacao),
+      );
+
+    const permissoesEfetivas =
+      await this.permissoesService.obterPermissoesEfetivasUsuario(
+        idEmpresa,
+        idUsuario,
+        usuario.perfil,
+      );
+
+    return {
+      sucesso: true,
+      mensagem: 'Permissoes customizadas do usuario atualizadas com sucesso.',
+      usuario: this.mapearUsuarioSistema(usuario, {
+        permissoesUsuario,
+        permissoesEfetivas,
+      }),
+    };
+  }
+
+  async limparPermissoesUsuarioSistema(
+    idEmpresa: number,
+    idUsuario: number,
+    usuarioAtualizacao: string,
+  ) {
+    const usuario = await this.usuarioRepository.findOne({
+      where: { idUsuario: String(idUsuario), idEmpresa: String(idEmpresa) },
+    });
+
+    if (!usuario) {
+      throw new BadRequestException(
+        'Usuario nao encontrado para a empresa logada.',
+      );
+    }
+
+    await this.permissoesService.limparPermissoesUsuario(idEmpresa, idUsuario);
+
+    usuario.usuarioAtualizacao = this.normalizarTextoMaiusculo(
+      usuarioAtualizacao,
+    );
+    await this.usuarioRepository.save(usuario);
+
+    const permissoesEfetivas =
+      await this.permissoesService.obterPermissoesEfetivasUsuario(
+        idEmpresa,
+        idUsuario,
+        usuario.perfil,
+      );
+
+    return {
+      sucesso: true,
+      mensagem: 'Permissoes customizadas removidas com sucesso.',
+      usuario: this.mapearUsuarioSistema(usuario, {
+        permissoesUsuario: null,
+        permissoesEfetivas,
+      }),
     };
   }
 
@@ -280,15 +424,62 @@ export class AuthService {
     dados: CriarUsuarioSistemaDto,
     usuarioAtualizacao: string,
   ) {
-    return this.registrarUsuario({
+    const perfilUsuarioCriado = this.normalizarPerfilSistema(dados.perfil);
+    if (perfilUsuarioCriado === 'ADM' && dados.permissoesUsuario) {
+      throw new BadRequestException(
+        'Usuarios com perfil ADM possuem acesso total fixo e nao aceitam customizacao.',
+      );
+    }
+
+    const resultado = await this.registrarUsuario({
       idEmpresa,
       nome: dados.nome,
       email: dados.email,
       senha: dados.senha,
-      perfil: this.normalizarPerfilSistema(dados.perfil),
+      perfil: perfilUsuarioCriado,
       ativo: dados.ativo ?? true,
       usuarioAtualizacao,
     });
+
+    const usuarioCriadoId = Number(resultado.usuario?.idUsuario ?? 0);
+
+    if (
+      dados.permissoesUsuario &&
+      Number.isFinite(usuarioCriadoId) &&
+      usuarioCriadoId > 0
+    ) {
+      await this.permissoesService.atualizarPermissoesUsuario(
+        idEmpresa,
+        usuarioCriadoId,
+        dados.permissoesUsuario,
+        usuarioAtualizacao,
+      );
+    }
+
+    if (!Number.isFinite(usuarioCriadoId) || usuarioCriadoId <= 0) {
+      return resultado;
+    }
+
+    const permissoesEfetivas =
+      await this.permissoesService.obterPermissoesEfetivasUsuario(
+        idEmpresa,
+        usuarioCriadoId,
+        perfilUsuarioCriado,
+      );
+    const permissoesUsuario =
+      await this.permissoesService.obterPermissoesUsuarioCustomizadas(
+        idEmpresa,
+        usuarioCriadoId,
+      );
+
+    return {
+      ...resultado,
+      usuario: {
+        ...resultado.usuario,
+        permissoesUsuario,
+        permissoesEfetivas,
+      },
+    };
   }
 
   async atualizarUsuarioSistema(
@@ -305,6 +496,15 @@ export class AuthService {
     if (!usuario) {
       throw new BadRequestException(
         'Usuario nao encontrado para a empresa logada.',
+      );
+    }
+
+    const perfilDestino = this.normalizarPerfilSistema(
+      dados.perfil ?? usuario.perfil,
+    );
+    if (perfilDestino === 'ADM' && dados.permissoesUsuario !== undefined) {
+      throw new BadRequestException(
+        'Usuarios com perfil ADM possuem acesso total fixo e nao aceitam customizacao.',
       );
     }
 
@@ -333,7 +533,7 @@ export class AuthService {
     }
 
     if (dados.perfil !== undefined) {
-      usuario.perfil = this.normalizarPerfilSistema(dados.perfil);
+      usuario.perfil = perfilDestino;
     }
 
     if (dados.ativo !== undefined) {
@@ -346,10 +546,35 @@ export class AuthService {
 
     try {
       const atualizado = await this.usuarioRepository.save(usuario);
+
+      if (dados.permissoesUsuario !== undefined) {
+        await this.permissoesService.atualizarPermissoesUsuario(
+          idEmpresa,
+          Number(atualizado.idUsuario),
+          dados.permissoesUsuario,
+          usuario.usuarioAtualizacao,
+        );
+      }
+
+      const permissoesUsuario =
+        await this.permissoesService.obterPermissoesUsuarioCustomizadas(
+          idEmpresa,
+          Number(atualizado.idUsuario),
+        );
+      const permissoesEfetivas =
+        await this.permissoesService.obterPermissoesEfetivasUsuario(
+          idEmpresa,
+          Number(atualizado.idUsuario),
+          atualizado.perfil,
+        );
+
       return {
         sucesso: true,
         mensagem: 'Usuario atualizado com sucesso.',
-        usuario: this.mapearUsuarioSistema(atualizado),
+        usuario: this.mapearUsuarioSistema(atualizado, {
+          permissoesUsuario,
+          permissoesEfetivas,
+        }),
       };
     } catch (error) {
       this.tratarErroCadastroUsuario(error);
@@ -373,7 +598,13 @@ export class AuthService {
     };
   }
 
-  private mapearUsuarioSistema(usuario: UsuarioEntity) {
+  private mapearUsuarioSistema(
+    usuario: UsuarioEntity,
+    extras?: {
+      permissoesUsuario?: PermissoesParciaisSistema | null;
+      permissoesEfetivas?: PermissoesSistema;
+    },
+  ) {
     return {
       idUsuario: Number(usuario.idUsuario),
       idEmpresa: Number(usuario.idEmpresa),
@@ -384,18 +615,13 @@ export class AuthService {
       ultimoLoginEm: usuario.ultimoLoginEm?.toISOString() ?? null,
       criadoEm: usuario.criadoEm?.toISOString() ?? null,
       atualizadoEm: usuario.atualizadoEm?.toISOString() ?? null,
+      permissoesUsuario: extras?.permissoesUsuario ?? null,
+      permissoesEfetivas: extras?.permissoesEfetivas,
     };
   }
 
   private normalizarPerfilSistema(perfil: string | undefined) {
-    const valor = (perfil ?? 'OPERADOR').trim().toUpperCase();
-    if (!['ADM', 'GESTOR', 'OPERADOR'].includes(valor)) {
-      throw new BadRequestException(
-        'Perfil invalido. Valores permitidos: ADM, GESTOR, OPERADOR.',
-      );
-    }
-
-    return valor;
+    return this.permissoesService.normalizarPerfil(perfil);
   }
 
   private normalizarEntradaUsuario(dados: CreateUsuarioDto): CreateUsuarioDto {
@@ -412,7 +638,7 @@ export class AuthService {
       nome: this.normalizarTextoMaiusculo(dados.nome),
       email: this.normalizarTextoMaiusculo(dados.email),
       senha,
-      perfil: (dados.perfil ?? 'ADM').trim().toUpperCase(),
+      perfil: this.normalizarPerfilSistema(dados.perfil ?? 'ADM'),
       ativo: dados.ativo ?? true,
       usuarioAtualizacao: (dados.usuarioAtualizacao ?? 'SISTEMA').trim(),
     };
@@ -560,6 +786,12 @@ export class AuthService {
           'Estrutura da tabela app.usuarios esta diferente do esperado.',
         );
       }
+
+      if (erroPg.code === '23514') {
+        throw new BadRequestException(
+          'Dados invalidos para o usuario. Revise perfil e campos obrigatorios.',
+        );
+      }
     }
 
     this.logger.error(
@@ -640,6 +872,7 @@ export class AuthService {
       nomeEmpresa?: string;
       email: string;
       perfil: string;
+      permissoes?: PermissoesSistema;
       sessao?: number;
       licencaModo?: string;
       licencaTerminoEm?: string;
