@@ -25,6 +25,11 @@ type UsuarioPermissoesRow = {
   permissoes?: unknown;
 };
 
+type UsuarioPerfilVinculoRow = {
+  id_usuario?: unknown;
+  codigo_perfil?: unknown;
+};
+
 type PerfilCadastroRow = {
   codigo?: unknown;
   nome?: unknown;
@@ -183,6 +188,103 @@ export class PermissoesService {
       perfisCadastro,
       overridesUsuarios: overrides,
     };
+  }
+
+  async obterMapeamentoPerfisUsuariosEmpresa(idEmpresa: number) {
+    await this.garantirEstrutura();
+    if (!this.persistenciaPermissoesDisponivel) {
+      return {} as Record<number, string>;
+    }
+
+    const linhas = (await this.dataSource.query(
+      `
+      SELECT id_usuario, codigo_perfil
+      FROM app.usuario_perfil_vinculos
+      WHERE id_empresa = $1
+      `,
+      [idEmpresa],
+    )) as UsuarioPerfilVinculoRow[];
+
+    const mapa: Record<number, string> = {};
+    for (const linha of linhas) {
+      const idUsuario = this.lerNumero(linha.id_usuario);
+      const codigoPerfil = this.normalizarPerfilTalvez(
+        this.lerTexto(linha.codigo_perfil),
+      );
+      if (!idUsuario || idUsuario <= 0 || !codigoPerfil) {
+        continue;
+      }
+      mapa[idUsuario] = codigoPerfil;
+    }
+
+    return mapa;
+  }
+
+  async resolverPerfilUsuario(
+    idEmpresa: number,
+    idUsuario: number,
+    perfilFallback: string | undefined,
+  ) {
+    const fallback = this.normalizarPerfil(perfilFallback ?? PERFIL_BASE_PADRAO);
+    await this.garantirEstrutura();
+    if (!this.persistenciaPermissoesDisponivel) {
+      return fallback;
+    }
+
+    const linhas = (await this.dataSource.query(
+      `
+      SELECT codigo_perfil
+      FROM app.usuario_perfil_vinculos
+      WHERE id_empresa = $1
+        AND id_usuario = $2
+      LIMIT 1
+      `,
+      [idEmpresa, idUsuario],
+    )) as Array<{ codigo_perfil?: unknown }>;
+
+    if (!Array.isArray(linhas) || linhas.length === 0) {
+      return fallback;
+    }
+
+    const codigoPerfil = this.normalizarPerfilTalvez(
+      this.lerTexto(linhas[0].codigo_perfil),
+    );
+
+    return codigoPerfil ?? fallback;
+  }
+
+  async atualizarPerfilVinculadoUsuario(
+    idEmpresa: number,
+    idUsuario: number,
+    codigoPerfil: string,
+    usuarioAtualizacao: string,
+  ) {
+    await this.garantirEstrutura();
+    this.exigirPersistenciaDisponivel();
+
+    const perfil = await this.validarPerfilParaVinculo(idEmpresa, codigoPerfil, false);
+
+    await this.dataSource.query(
+      `
+      INSERT INTO app.usuario_perfil_vinculos (
+        id_empresa,
+        id_usuario,
+        codigo_perfil,
+        usuario_atualizacao,
+        criado_em,
+        atualizado_em
+      )
+      VALUES ($1, $2, $3, $4, NOW(), NOW())
+      ON CONFLICT (id_empresa, id_usuario)
+      DO UPDATE SET
+        codigo_perfil = EXCLUDED.codigo_perfil,
+        usuario_atualizacao = EXCLUDED.usuario_atualizacao,
+        atualizado_em = NOW()
+      `,
+      [idEmpresa, idUsuario, perfil.codigo, usuarioAtualizacao],
+    );
+
+    return perfil;
   }
 
   async listarPerfisEmpresa(idEmpresa: number): Promise<PerfilSistemaCadastro[]> {
@@ -1044,20 +1146,41 @@ export class PermissoesService {
   }
 
   private async obterVinculosUsuariosPorPerfil(idEmpresa: number) {
-    const linhas = (await this.dataSource.query(
-      `
-      SELECT
-        id_usuario,
-        nome,
-        email,
-        ativo,
-        perfil
-      FROM app.usuarios
-      WHERE id_empresa = $1
-      ORDER BY nome ASC
-      `,
-      [idEmpresa],
-    )) as UsuarioPerfilRow[];
+    const linhas = this.persistenciaPermissoesDisponivel
+      ? ((await this.dataSource.query(
+          `
+          SELECT
+            u.id_usuario,
+            u.nome,
+            u.email,
+            u.ativo,
+            COALESCE(
+              NULLIF(TRIM(up.codigo_perfil), ''),
+              u.perfil
+            ) AS perfil
+          FROM app.usuarios u
+          LEFT JOIN app.usuario_perfil_vinculos up
+            ON up.id_empresa = u.id_empresa
+           AND up.id_usuario = u.id_usuario
+          WHERE u.id_empresa = $1
+          ORDER BY u.nome ASC
+          `,
+          [idEmpresa],
+        )) as UsuarioPerfilRow[])
+      : ((await this.dataSource.query(
+          `
+          SELECT
+            id_usuario,
+            nome,
+            email,
+            ativo,
+            perfil
+          FROM app.usuarios
+          WHERE id_empresa = $1
+          ORDER BY nome ASC
+          `,
+          [idEmpresa],
+        )) as UsuarioPerfilRow[]);
 
     const vinculos: Record<string, PerfilUsuarioVinculado[]> = {};
 
@@ -1220,6 +1343,21 @@ export class PermissoesService {
         WHERE id_empresa = $1
           AND perfil IS NOT NULL
           AND TRIM(perfil) <> ''
+        UNION
+        SELECT DISTINCT
+          NULLIF(
+            REGEXP_REPLACE(
+              UPPER(TRIM(codigo_perfil)),
+              '[^A-Z0-9_-]+',
+              '_',
+              'g'
+            ),
+            ''
+          ) AS perfil_codigo
+        FROM app.usuario_perfil_vinculos
+        WHERE id_empresa = $1
+          AND codigo_perfil IS NOT NULL
+          AND TRIM(codigo_perfil) <> ''
       ) AS base
       LEFT JOIN app.perfis_usuario existente
         ON existente.id_empresa = $1
@@ -1326,6 +1464,28 @@ export class PermissoesService {
         `);
 
         await this.dataSource.query(`
+          CREATE TABLE IF NOT EXISTS app.usuario_perfil_vinculos (
+            id_usuario_perfil BIGSERIAL PRIMARY KEY,
+            id_empresa BIGINT NOT NULL,
+            id_usuario BIGINT NOT NULL,
+            codigo_perfil VARCHAR(40) NOT NULL,
+            usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
+            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+
+        await this.dataSource.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS ux_usuario_perfil_vinculos_empresa_usuario
+          ON app.usuario_perfil_vinculos (id_empresa, id_usuario)
+        `);
+
+        await this.dataSource.query(`
+          CREATE INDEX IF NOT EXISTS ix_usuario_perfil_vinculos_empresa_perfil
+          ON app.usuario_perfil_vinculos (id_empresa, codigo_perfil)
+        `);
+
+        await this.dataSource.query(`
           CREATE TABLE IF NOT EXISTS app.perfis_usuario (
             id_perfil BIGSERIAL PRIMARY KEY,
             id_empresa BIGINT NOT NULL,
@@ -1368,7 +1528,7 @@ export class PermissoesService {
     }
 
     throw new BadRequestException(
-      'Estrutura de permissoes nao disponivel no banco. Contate o suporte para habilitar app.perfil_permissoes, app.usuario_permissoes e app.perfis_usuario.',
+      'Estrutura de permissoes nao disponivel no banco. Contate o suporte para habilitar app.perfil_permissoes, app.usuario_permissoes, app.usuario_perfil_vinculos e app.perfis_usuario.',
     );
   }
 }

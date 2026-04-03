@@ -69,7 +69,16 @@ export class AssinaturaAcessoInterceptor implements NestInterceptor {
       );
     }
 
-    const perfilAtual = (usuarioAtual.perfil ?? usuario.perfil).trim().toUpperCase();
+    let perfilAtual = 'OPERADOR';
+    try {
+      perfilAtual = await this.permissoesService.resolverPerfilUsuario(
+        usuario.idEmpresa,
+        usuario.sub,
+        usuarioAtual.perfil ?? usuario.perfil,
+      );
+    } catch {
+      perfilAtual = 'OPERADOR';
+    }
     const avaliacaoAcesso = await this.permissoesService.avaliarPermissaoPorRota(
       usuario.idEmpresa,
       usuario.sub,
