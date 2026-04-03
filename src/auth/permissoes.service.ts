@@ -120,6 +120,10 @@ const ROTAS_SISTEMA_POR_MODULO: Array<{
     modulos: ['abastecimentos'],
   },
   {
+    prefixos: ['/api/despesas', '/api/sistema/despesas'],
+    modulos: ['despesas'],
+  },
+  {
     prefixos: ['/api/motoristas', '/api/sistema/motoristas'],
     modulos: ['motoristas'],
   },

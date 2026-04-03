@@ -28,6 +28,7 @@ export const MODULOS_SISTEMA = [
   'engate_desengate',
   'viagens',
   'abastecimentos',
+  'despesas',
   'motoristas',
   'produtos',
   'fornecedores',
@@ -79,6 +80,10 @@ const moduloMetadata: Record<ModuloSistema, Omit<ModuloMetadata, 'id'>> = {
   abastecimentos: {
     label: 'Abastecimentos',
     descricao: 'Controle de abastecimentos da frota.',
+  },
+  despesas: {
+    label: 'Despesas',
+    descricao: 'Lancamentos de pedagio, multa, alimentacao e custos da viagem.',
   },
   motoristas: {
     label: 'Motoristas',
@@ -147,6 +152,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       engate_desengate: acessoTotal,
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
+      despesas: acessoTotal,
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,
@@ -161,6 +167,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       engate_desengate: acessoTotal,
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
+      despesas: acessoTotal,
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,
@@ -175,6 +182,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       engate_desengate: acessoTotal,
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
+      despesas: acessoTotal,
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,

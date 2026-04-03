@@ -9,6 +9,7 @@ import { AbastecimentosModule } from './abastecimentos/abastecimentos.module';
 import { CombustiveisModule } from './combustiveis/combustiveis.module';
 import { CorVeiculoModule } from './cor-veiculo/cor-veiculo.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { DespesasModule } from './despesas/despesas.module';
 import { EngateDesengateModule } from './engate-desengate/engate-desengate.module';
 import { FornecedorModule } from './fornecedor/fornecedor.module';
 import { HealthController } from './health/health.controller';
@@ -82,6 +83,7 @@ import { ViagensModule } from './viagens/viagens.module';
     TiposVeiculoModule,
     DashboardModule,
     EngateDesengateModule,
+    DespesasModule,
   ],
   controllers: [HealthController],
   providers: [
