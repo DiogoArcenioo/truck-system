@@ -357,20 +357,24 @@ export class AuthService {
     usuarioAtualizacao: string,
   ) {
     const perfilNormalizado = this.permissoesService.normalizarPerfil(perfil);
-    const permissoesAtualizadas =
-      await this.permissoesService.atualizarPermissoesPerfil(
-        idEmpresa,
-        perfilNormalizado,
-        permissoes,
-        this.normalizarTextoMaiusculo(usuarioAtualizacao),
-      );
+    try {
+      const permissoesAtualizadas =
+        await this.permissoesService.atualizarPermissoesPerfil(
+          idEmpresa,
+          perfilNormalizado,
+          permissoes,
+          this.normalizarTextoMaiusculo(usuarioAtualizacao),
+        );
 
-    return {
-      sucesso: true,
-      mensagem: `Permissoes do perfil ${perfilNormalizado} atualizadas com sucesso.`,
-      perfil: perfilNormalizado,
-      permissoes: permissoesAtualizadas,
-    };
+      return {
+        sucesso: true,
+        mensagem: `Permissoes do perfil ${perfilNormalizado} atualizadas com sucesso.`,
+        perfil: perfilNormalizado,
+        permissoes: permissoesAtualizadas,
+      };
+    } catch (error) {
+      this.tratarErroAtualizacaoPermissoesPerfil(error);
+    }
   }
 
   async listarPerfisSistema(idEmpresa: number) {
@@ -1127,6 +1131,55 @@ export class AuthService {
     );
     throw new BadRequestException(
       'Nao foi possivel cadastrar o usuario neste momento.',
+    );
+  }
+
+  private tratarErroAtualizacaoPermissoesPerfil(error: unknown): never {
+    if (error instanceof BadRequestException) {
+      throw error;
+    }
+
+    if (error instanceof QueryFailedError) {
+      const erroPg = error.driverError as {
+        code?: string;
+        message?: string;
+        constraint?: string;
+      };
+
+      this.logger.error(
+        `Falha ao atualizar permissoes de perfil. code=${erroPg.code ?? 'N/A'} message=${erroPg.message ?? 'Erro desconhecido'}`,
+      );
+
+      if (erroPg.code === '22001') {
+        throw new BadRequestException(
+          'O codigo do perfil excede o limite da estrutura atual do banco. Atualize a estrutura de permissoes e tente novamente.',
+        );
+      }
+
+      if (erroPg.code === '42P01') {
+        throw new BadRequestException(
+          'Estrutura de permissoes nao encontrada no banco (tabelas de perfil).',
+        );
+      }
+
+      if (erroPg.code === '42703') {
+        throw new BadRequestException(
+          'Estrutura de permissoes da tabela de perfil esta diferente do esperado.',
+        );
+      }
+
+      if (erroPg.code === '23514') {
+        throw new BadRequestException(
+          'Dados de permissoes invalidos para o perfil selecionado.',
+        );
+      }
+    }
+
+    this.logger.error(
+      `Falha ao atualizar permissoes de perfil sem codigo SQL mapeado. message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+    );
+    throw new BadRequestException(
+      'Nao foi possivel atualizar as permissoes do perfil neste momento.',
     );
   }
 

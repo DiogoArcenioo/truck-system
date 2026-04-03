@@ -1417,6 +1417,29 @@ export class PermissoesService {
     }
   }
 
+  private async ajustarComprimentoColunasPerfil() {
+    try {
+      await this.dataSource.query(`
+        ALTER TABLE app.perfil_permissoes
+        ALTER COLUMN perfil TYPE VARCHAR(40)
+      `);
+
+      await this.dataSource.query(`
+        ALTER TABLE app.perfis_usuario
+        ALTER COLUMN codigo TYPE VARCHAR(40)
+      `);
+
+      await this.dataSource.query(`
+        ALTER TABLE app.usuario_perfil_vinculos
+        ALTER COLUMN codigo_perfil TYPE VARCHAR(40)
+      `);
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel ajustar comprimento das colunas de perfil. message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+      );
+    }
+  }
+
   private async garantirEstrutura() {
     if (this.estruturaInicializada) {
       return;
@@ -1506,6 +1529,7 @@ export class PermissoesService {
           ON app.perfis_usuario (id_empresa, codigo)
         `);
 
+        await this.ajustarComprimentoColunasPerfil();
         await this.ajustarRestricaoPerfilUsuarios();
         this.estruturaInicializada = true;
       } catch (error) {
