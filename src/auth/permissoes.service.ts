@@ -87,6 +87,10 @@ const ROTAS_SISTEMA_POR_MODULO: Array<{
     modulos: ['veiculos'],
   },
   {
+    prefixos: ['/api/engate-desengate', '/api/sistema/engate-desengate'],
+    modulos: ['engate_desengate'],
+  },
+  {
     prefixos: ['/api/marca-veiculo', '/api/sistema/marca-veiculo'],
     modulos: ['veiculos'],
   },
