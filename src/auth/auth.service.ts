@@ -795,7 +795,7 @@ export class AuthService {
 
   private async resolverPerfisPersistenciaUsuario(
     idEmpresa: number,
-    perfilSolicitado: string,
+    perfilSolicitado: string | undefined,
   ) {
     const perfis = new Set<string>();
     const adicionarPerfil = (perfil: string | undefined) => {
@@ -811,17 +811,19 @@ export class AuthService {
 
     adicionarPerfil(perfilSolicitado);
 
-    try {
-      const cadastro = await this.permissoesService.obterPerfilCadastroPorCodigo(
-        idEmpresa,
-        perfilSolicitado,
-      );
-      if (cadastro) {
-        adicionarPerfil(cadastro.codigo);
-        adicionarPerfil(cadastro.perfilBase);
+    if (typeof perfilSolicitado === 'string' && perfilSolicitado.trim()) {
+      try {
+        const cadastro = await this.permissoesService.obterPerfilCadastroPorCodigo(
+          idEmpresa,
+          perfilSolicitado,
+        );
+        if (cadastro) {
+          adicionarPerfil(cadastro.codigo);
+          adicionarPerfil(cadastro.perfilBase);
+        }
+      } catch {
+        // Falha de leitura do cadastro de perfis nao deve impedir o cadastro do usuario.
       }
-    } catch {
-      // Falha de leitura do cadastro de perfis nao deve impedir o cadastro do usuario.
     }
 
     adicionarPerfil('OPERADOR');
@@ -998,6 +1000,7 @@ export class AuthService {
       const erroPg = error.driverError as {
         code?: string;
         message?: string;
+        constraint?: string;
       };
 
       this.logger.error(
