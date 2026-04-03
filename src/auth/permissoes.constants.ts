@@ -16,6 +16,7 @@ export const MODULOS_SISTEMA = [
   'requisicao',
   'ordem_servico',
   'veiculos',
+  'engate_desengate',
   'viagens',
   'abastecimentos',
   'motoristas',
@@ -57,6 +58,10 @@ const moduloMetadata: Record<ModuloSistema, Omit<ModuloMetadata, 'id'>> = {
   veiculos: {
     label: 'Cadastro de veiculos',
     descricao: 'Cadastros de veiculos e catalogos de veiculo.',
+  },
+  engate_desengate: {
+    label: 'Engate e desengate',
+    descricao: 'Movimentacoes de engate e desengate da frota.',
   },
   viagens: {
     label: 'Viagens',
@@ -130,6 +135,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilUsuario, PermissoesSistema> 
       requisicao: acessoTotal,
       ordem_servico: acessoTotal,
       veiculos: acessoTotal,
+      engate_desengate: acessoTotal,
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
       motoristas: acessoTotal,
@@ -143,6 +149,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilUsuario, PermissoesSistema> 
       requisicao: acessoTotal,
       ordem_servico: acessoTotal,
       veiculos: acessoTotal,
+      engate_desengate: acessoTotal,
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
       motoristas: acessoTotal,
@@ -156,6 +163,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilUsuario, PermissoesSistema> 
       requisicao: acessoTotal,
       ordem_servico: acessoTotal,
       veiculos: acessoTotal,
+      engate_desengate: acessoTotal,
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
       motoristas: acessoTotal,
