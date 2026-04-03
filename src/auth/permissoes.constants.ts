@@ -1,6 +1,15 @@
-export const PERFIS_USUARIO = ['ADM', 'GESTOR', 'OPERADOR'] as const;
+export const PERFIS_BASE = ['ADM', 'GESTOR', 'OPERADOR'] as const;
 
-export type PerfilUsuario = (typeof PERFIS_USUARIO)[number];
+export type PerfilBase = (typeof PERFIS_BASE)[number];
+
+export const PERFIL_BASE_PADRAO: PerfilBase = 'OPERADOR';
+
+// Mantido por compatibilidade com imports existentes.
+export const PERFIS_USUARIO = PERFIS_BASE;
+
+export type PerfilUsuario = string;
+
+export const PERFIL_CODIGO_REGEX = /^[A-Z0-9_-]{2,40}$/;
 
 export const ACOES_PERMISSAO = [
   'visualizar',
@@ -123,7 +132,7 @@ function criarPermissoesComBase(
 const acessoTotal = crud(true, true, true, true);
 const semAcesso = crud(false, false, false, false);
 
-export const PERMISSOES_PADRAO_PERFIL: Record<PerfilUsuario, PermissoesSistema> =
+export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
   {
     ADM: criarPermissoesComBase({
       home: acessoTotal,

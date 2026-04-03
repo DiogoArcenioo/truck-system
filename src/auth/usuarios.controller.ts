@@ -13,7 +13,9 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AtualizarPermissoesDto } from './dto/atualizar-permissoes.dto';
+import { AtualizarPerfilSistemaDto } from './dto/atualizar-perfil-sistema.dto';
 import { AtualizarUsuarioSistemaDto } from './dto/atualizar-usuario-sistema.dto';
+import { CriarPerfilSistemaDto } from './dto/criar-perfil-sistema.dto';
 import { CriarUsuarioSistemaDto } from './dto/criar-usuario-sistema.dto';
 import { JwtAuthGuard, JwtUsuarioPayload } from './guards/jwt-auth.guard';
 
@@ -42,6 +44,41 @@ export class UsuariosController {
       usuario.idEmpresa,
       dados,
       usuario.email,
+    );
+  }
+
+  @Get('perfis')
+  async listarPerfis(@Req() request: RequisicaoAutenticada) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.authService.listarPerfisSistema(usuario.idEmpresa);
+  }
+
+  @Post('perfis')
+  async cadastrarPerfil(
+    @Req() request: RequisicaoAutenticada,
+    @Body() dados: CriarPerfilSistemaDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.authService.criarPerfilSistema(
+      usuario.idEmpresa,
+      dados,
+      dados.usuarioAtualizacao ?? usuario.email,
+    );
+  }
+
+  @Put('perfis/:perfil')
+  async atualizarPerfil(
+    @Req() request: RequisicaoAutenticada,
+    @Param('perfil') perfil: string,
+    @Body() dados: AtualizarPerfilSistemaDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+
+    return this.authService.atualizarPerfilSistema(
+      usuario.idEmpresa,
+      perfil,
+      dados,
+      dados.usuarioAtualizacao ?? usuario.email,
     );
   }
 

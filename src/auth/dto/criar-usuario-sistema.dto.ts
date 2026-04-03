@@ -1,15 +1,15 @@
 import {
   IsBoolean,
   IsEmail,
-  IsIn,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { PERFIS_USUARIO } from '../permissoes.constants';
+import { PERFIL_CODIGO_REGEX } from '../permissoes.constants';
 
 export class CriarUsuarioSistemaDto {
   @IsString()
@@ -28,8 +28,11 @@ export class CriarUsuarioSistemaDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(PERFIS_USUARIO)
-  perfil?: (typeof PERFIS_USUARIO)[number];
+  @Matches(PERFIL_CODIGO_REGEX, {
+    message:
+      'Perfil invalido. Use de 2 a 40 caracteres com letras, numeros, "_" ou "-".',
+  })
+  perfil?: string;
 
   @IsOptional()
   @IsBoolean()

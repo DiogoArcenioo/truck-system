@@ -286,23 +286,31 @@ export class AuthService {
       total: usuarios.length,
       modulosPermissao: configuracaoPermissoes.modulos,
       permissoesPerfil: configuracaoPermissoes.perfis,
+      perfisCadastro: configuracaoPermissoes.perfisCadastro,
       usuarios: usuarios.map((usuario) => {
         const perfil = this.permissoesService.normalizarPerfil(usuario.perfil);
+        const perfilCadastro = configuracaoPermissoes.perfisCadastro.find(
+          (item) => item.codigo === perfil,
+        );
         const overrideUsuario =
           perfil === 'ADM'
             ? null
             : (configuracaoPermissoes.overridesUsuarios[
                 Number(usuario.idUsuario)
               ] ?? null);
+        const permissoesBasePerfil =
+          configuracaoPermissoes.perfis[perfil] ??
+          configuracaoPermissoes.perfis.OPERADOR;
         const permissoesEfetivas =
           perfil === 'ADM'
             ? configuracaoPermissoes.perfis.ADM
             : this.permissoesService.combinarPermissoes(
-                configuracaoPermissoes.perfis[perfil],
+                permissoesBasePerfil,
                 overrideUsuario,
               );
 
         return this.mapearUsuarioSistema(usuario, {
+          perfilNome: perfilCadastro?.nome ?? perfil,
           permissoesUsuario: overrideUsuario,
           permissoesEfetivas,
         });
@@ -330,6 +338,67 @@ export class AuthService {
       mensagem: `Permissoes do perfil ${perfilNormalizado} atualizadas com sucesso.`,
       perfil: perfilNormalizado,
       permissoes: permissoesAtualizadas,
+    };
+  }
+
+  async listarPerfisSistema(idEmpresa: number) {
+    const perfis = await this.permissoesService.listarPerfisEmpresa(idEmpresa);
+
+    return {
+      sucesso: true,
+      total: perfis.length,
+      perfis,
+    };
+  }
+
+  async criarPerfilSistema(
+    idEmpresa: number,
+    dados: {
+      nome: string;
+      codigo?: string;
+      descricao?: string;
+      ativo?: boolean;
+      perfilBase?: string;
+      permissoes?: unknown;
+    },
+    usuarioAtualizacao: string,
+  ) {
+    const perfil = await this.permissoesService.criarPerfil(
+      idEmpresa,
+      dados,
+      this.normalizarTextoMaiusculo(usuarioAtualizacao),
+    );
+
+    return {
+      sucesso: true,
+      mensagem: `Perfil ${perfil.codigo} criado com sucesso.`,
+      perfil,
+    };
+  }
+
+  async atualizarPerfilSistema(
+    idEmpresa: number,
+    codigoPerfil: string,
+    dados: {
+      nome?: string;
+      descricao?: string;
+      ativo?: boolean;
+      perfilBase?: string;
+      permissoes?: unknown;
+    },
+    usuarioAtualizacao: string,
+  ) {
+    const perfil = await this.permissoesService.atualizarPerfilCadastro(
+      idEmpresa,
+      codigoPerfil,
+      dados,
+      this.normalizarTextoMaiusculo(usuarioAtualizacao),
+    );
+
+    return {
+      sucesso: true,
+      mensagem: `Perfil ${perfil.codigo} atualizado com sucesso.`,
+      perfil,
     };
   }
 
@@ -425,6 +494,11 @@ export class AuthService {
     usuarioAtualizacao: string,
   ) {
     const perfilUsuarioCriado = this.normalizarPerfilSistema(dados.perfil);
+    await this.permissoesService.validarPerfilParaVinculo(
+      idEmpresa,
+      perfilUsuarioCriado,
+      true,
+    );
     if (perfilUsuarioCriado === 'ADM' && dados.permissoesUsuario) {
       throw new BadRequestException(
         'Usuarios com perfil ADM possuem acesso total fixo e nao aceitam customizacao.',
@@ -502,6 +576,13 @@ export class AuthService {
     const perfilDestino = this.normalizarPerfilSistema(
       dados.perfil ?? usuario.perfil,
     );
+    if (dados.perfil !== undefined) {
+      await this.permissoesService.validarPerfilParaVinculo(
+        idEmpresa,
+        perfilDestino,
+        true,
+      );
+    }
     if (perfilDestino === 'ADM' && dados.permissoesUsuario !== undefined) {
       throw new BadRequestException(
         'Usuarios com perfil ADM possuem acesso total fixo e nao aceitam customizacao.',
@@ -601,6 +682,7 @@ export class AuthService {
   private mapearUsuarioSistema(
     usuario: UsuarioEntity,
     extras?: {
+      perfilNome?: string;
       permissoesUsuario?: PermissoesParciaisSistema | null;
       permissoesEfetivas?: PermissoesSistema;
     },
@@ -611,6 +693,7 @@ export class AuthService {
       nome: usuario.nome,
       email: usuario.email,
       perfil: usuario.perfil,
+      perfilNome: extras?.perfilNome ?? usuario.perfil,
       ativo: usuario.ativo,
       ultimoLoginEm: usuario.ultimoLoginEm?.toISOString() ?? null,
       criadoEm: usuario.criadoEm?.toISOString() ?? null,
@@ -790,6 +873,12 @@ export class AuthService {
       if (erroPg.code === '23514') {
         throw new BadRequestException(
           'Dados invalidos para o usuario. Revise perfil e campos obrigatorios.',
+        );
+      }
+
+      if (erroPg.code === '23502') {
+        throw new BadRequestException(
+          'Campos obrigatorios do usuario nao foram informados. Revise perfil, nome, email e status.',
         );
       }
     }

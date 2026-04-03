@@ -6,9 +6,11 @@ import {
   MODULOS_SISTEMA,
   MODULOS_SISTEMA_METADATA,
   ModuloSistema,
-  PERFIS_USUARIO,
+  PERFIL_BASE_PADRAO,
+  PERFIL_CODIGO_REGEX,
+  PERFIS_BASE,
+  PerfilBase,
   PERMISSOES_PADRAO_PERFIL,
-  PerfilUsuario,
   PermissoesParciaisSistema,
   PermissoesSistema,
 } from './permissoes.constants';
@@ -21,6 +23,42 @@ type PerfilPermissoesRow = {
 type UsuarioPermissoesRow = {
   id_usuario?: unknown;
   permissoes?: unknown;
+};
+
+type PerfilCadastroRow = {
+  codigo?: unknown;
+  nome?: unknown;
+  descricao?: unknown;
+  perfil_base?: unknown;
+  ativo?: unknown;
+  fixo?: unknown;
+};
+
+type UsuarioPerfilRow = {
+  id_usuario?: unknown;
+  nome?: unknown;
+  email?: unknown;
+  ativo?: unknown;
+  perfil?: unknown;
+};
+
+export type PerfilUsuarioVinculado = {
+  idUsuario: number;
+  nome: string;
+  email: string;
+  ativo: boolean;
+};
+
+export type PerfilSistemaCadastro = {
+  codigo: string;
+  nome: string;
+  descricao: string;
+  ativo: boolean;
+  fixo: boolean;
+  perfilBase: PerfilBase;
+  quantidadeUsuarios: number;
+  usuariosVinculados: PerfilUsuarioVinculado[];
+  permissoes: PermissoesSistema;
 };
 
 type ResultadoAcessoRota = {
@@ -98,67 +136,363 @@ export class PermissoesService {
 
   constructor(private readonly dataSource: DataSource) {}
 
-  normalizarPerfil(perfil: string | undefined): PerfilUsuario {
-    const valor = (perfil ?? 'OPERADOR').trim().toUpperCase();
-    if (!PERFIS_USUARIO.includes(valor as PerfilUsuario)) {
+  normalizarPerfil(perfil: string | undefined): string {
+    const valor = this.normalizarCodigoPerfil(perfil ?? PERFIL_BASE_PADRAO);
+    if (!PERFIL_CODIGO_REGEX.test(valor)) {
       throw new BadRequestException(
-        'Perfil invalido. Valores permitidos: ADM, GESTOR, OPERADOR.',
+        'Perfil invalido. Use de 2 a 40 caracteres com letras, numeros, "_" ou "-".',
       );
     }
 
-    return valor as PerfilUsuario;
+    return valor;
+  }
+
+  normalizarPerfilBase(
+    perfilBase: string | undefined,
+    estrito = true,
+  ): PerfilBase {
+    const valor = (perfilBase ?? PERFIL_BASE_PADRAO).trim().toUpperCase();
+    if (!PERFIS_BASE.includes(valor as PerfilBase)) {
+      if (!estrito) {
+        return PERFIL_BASE_PADRAO;
+      }
+      throw new BadRequestException(
+        'Perfil base invalido. Valores permitidos: ADM, GESTOR, OPERADOR.',
+      );
+    }
+
+    return valor as PerfilBase;
   }
 
   async listarPermissoesEmpresa(idEmpresa: number) {
     await this.garantirEstrutura();
-    const [perfis, overrides] = await Promise.all([
+    await this.garantirPerfisEmpresa(idEmpresa);
+    const [perfis, overrides, perfisCadastro] = await Promise.all([
       this.obterPermissoesPerfisEmpresa(idEmpresa),
       this.obterOverridesUsuariosEmpresa(idEmpresa),
+      this.listarPerfisEmpresa(idEmpresa),
     ]);
 
     return {
       modulos: MODULOS_SISTEMA_METADATA,
       perfis,
+      perfisCadastro,
       overridesUsuarios: overrides,
     };
   }
 
+  async listarPerfisEmpresa(idEmpresa: number): Promise<PerfilSistemaCadastro[]> {
+    await this.garantirEstrutura();
+    await this.garantirPerfisEmpresa(idEmpresa);
+
+    if (!this.persistenciaPermissoesDisponivel) {
+      return this.listarPerfisFallbackSemPersistencia(idEmpresa);
+    }
+
+    const [linhasPerfil, permissoesPerfil, vinculos] = await Promise.all([
+      this.dataSource.query(
+        `
+        SELECT
+          codigo,
+          nome,
+          descricao,
+          perfil_base,
+          ativo,
+          fixo
+        FROM app.perfis_usuario
+        WHERE id_empresa = $1
+        ORDER BY fixo DESC, nome ASC, codigo ASC
+        `,
+        [idEmpresa],
+      ) as Promise<PerfilCadastroRow[]>,
+      this.obterPermissoesPerfisEmpresa(idEmpresa),
+      this.obterVinculosUsuariosPorPerfil(idEmpresa),
+    ]);
+
+    return linhasPerfil
+      .map((linha) => this.mapearPerfilCadastro(linha, permissoesPerfil, vinculos))
+      .filter((perfil): perfil is PerfilSistemaCadastro => Boolean(perfil));
+  }
+
+  async obterPerfilCadastroPorCodigo(
+    idEmpresa: number,
+    codigoPerfil: string,
+  ): Promise<PerfilSistemaCadastro | null> {
+    await this.garantirEstrutura();
+    await this.garantirPerfisEmpresa(idEmpresa);
+    const codigo = this.normalizarPerfil(codigoPerfil);
+
+    if (!this.persistenciaPermissoesDisponivel) {
+      const perfis = await this.listarPerfisFallbackSemPersistencia(idEmpresa);
+      return perfis.find((perfil) => perfil.codigo === codigo) ?? null;
+    }
+
+    const [linhas, permissoes, vinculos] = await Promise.all([
+      this.dataSource.query(
+        `
+        SELECT
+          codigo,
+          nome,
+          descricao,
+          perfil_base,
+          ativo,
+          fixo
+        FROM app.perfis_usuario
+        WHERE id_empresa = $1
+          AND codigo = $2
+        LIMIT 1
+        `,
+        [idEmpresa, codigo],
+      ) as Promise<PerfilCadastroRow[]>,
+      this.obterPermissoesPerfisEmpresa(idEmpresa),
+      this.obterVinculosUsuariosPorPerfil(idEmpresa),
+    ]);
+
+    if (!Array.isArray(linhas) || linhas.length === 0) {
+      return null;
+    }
+
+    return this.mapearPerfilCadastro(linhas[0], permissoes, vinculos);
+  }
+
+  async validarPerfilParaVinculo(
+    idEmpresa: number,
+    codigoPerfil: string,
+    exigirAtivo = true,
+  ): Promise<PerfilSistemaCadastro> {
+    const perfil = await this.obterPerfilCadastroPorCodigo(idEmpresa, codigoPerfil);
+    if (!perfil) {
+      throw new BadRequestException('Perfil nao encontrado para a empresa logada.');
+    }
+
+    if (exigirAtivo && !perfil.ativo) {
+      throw new BadRequestException(
+        `Perfil ${perfil.codigo} esta inativo e nao pode receber novos usuarios.`,
+      );
+    }
+
+    return perfil;
+  }
+
+  async criarPerfil(
+    idEmpresa: number,
+    dados: {
+      nome: string;
+      codigo?: string;
+      descricao?: string;
+      ativo?: boolean;
+      perfilBase?: string;
+      permissoes?: unknown;
+    },
+    usuarioAtualizacao: string,
+  ): Promise<PerfilSistemaCadastro> {
+    await this.garantirEstrutura();
+    this.exigirPersistenciaDisponivel();
+    await this.garantirPerfisEmpresa(idEmpresa);
+
+    const nome = this.normalizarTextoObrigatorio(dados.nome, 'Nome do perfil');
+    const descricao = this.normalizarTextoOpcional(dados.descricao);
+    const codigo = dados.codigo?.trim()
+      ? this.normalizarPerfil(dados.codigo)
+      : this.gerarCodigoPerfil(nome);
+    const perfilBase = this.normalizarPerfilBase(dados.perfilBase);
+    const ativo = dados.ativo ?? true;
+
+    const existe = await this.dataSource.query(
+      `
+      SELECT 1
+      FROM app.perfis_usuario
+      WHERE id_empresa = $1
+        AND codigo = $2
+      LIMIT 1
+      `,
+      [idEmpresa, codigo],
+    );
+
+    if (Array.isArray(existe) && existe.length > 0) {
+      throw new BadRequestException(
+        `Ja existe um perfil cadastrado com o codigo ${codigo}.`,
+      );
+    }
+
+    await this.dataSource.query(
+      `
+      INSERT INTO app.perfis_usuario (
+        id_empresa,
+        codigo,
+        nome,
+        descricao,
+        perfil_base,
+        ativo,
+        fixo,
+        usuario_atualizacao,
+        criado_em,
+        atualizado_em
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, NOW(), NOW())
+      `,
+      [idEmpresa, codigo, nome, descricao, perfilBase, ativo, usuarioAtualizacao],
+    );
+
+    if (dados.permissoes) {
+      await this.atualizarPermissoesPerfil(
+        idEmpresa,
+        codigo,
+        dados.permissoes,
+        usuarioAtualizacao,
+      );
+    }
+
+    const perfilCriado = await this.obterPerfilCadastroPorCodigo(idEmpresa, codigo);
+    if (!perfilCriado) {
+      throw new BadRequestException('Nao foi possivel carregar o perfil criado.');
+    }
+
+    return perfilCriado;
+  }
+
+  async atualizarPerfilCadastro(
+    idEmpresa: number,
+    codigoPerfil: string,
+    dados: {
+      nome?: string;
+      descricao?: string;
+      ativo?: boolean;
+      perfilBase?: string;
+      permissoes?: unknown;
+    },
+    usuarioAtualizacao: string,
+  ): Promise<PerfilSistemaCadastro> {
+    await this.garantirEstrutura();
+    this.exigirPersistenciaDisponivel();
+    await this.garantirPerfisEmpresa(idEmpresa);
+
+    const codigo = this.normalizarPerfil(codigoPerfil);
+    const perfilAtual = await this.obterPerfilCadastroPorCodigo(idEmpresa, codigo);
+
+    if (!perfilAtual) {
+      throw new BadRequestException('Perfil nao encontrado para a empresa logada.');
+    }
+
+    if (perfilAtual.fixo && codigo === 'ADM' && dados.ativo === false) {
+      throw new BadRequestException('Nao e permitido inativar o perfil ADM.');
+    }
+
+    const nome =
+      dados.nome !== undefined
+        ? this.normalizarTextoObrigatorio(dados.nome, 'Nome do perfil')
+        : perfilAtual.nome;
+    const descricao =
+      dados.descricao !== undefined
+        ? this.normalizarTextoOpcional(dados.descricao)
+        : perfilAtual.descricao;
+    const ativo = dados.ativo ?? perfilAtual.ativo;
+    const perfilBase = this.normalizarPerfilBase(
+      dados.perfilBase ?? perfilAtual.perfilBase,
+    );
+
+    await this.dataSource.query(
+      `
+      UPDATE app.perfis_usuario
+      SET
+        nome = $3,
+        descricao = $4,
+        ativo = $5,
+        perfil_base = $6,
+        usuario_atualizacao = $7,
+        atualizado_em = NOW()
+      WHERE id_empresa = $1
+        AND codigo = $2
+      `,
+      [idEmpresa, codigo, nome, descricao, ativo, perfilBase, usuarioAtualizacao],
+    );
+
+    if (dados.permissoes !== undefined) {
+      await this.atualizarPermissoesPerfil(
+        idEmpresa,
+        codigo,
+        dados.permissoes,
+        usuarioAtualizacao,
+      );
+    }
+
+    const perfilAtualizado = await this.obterPerfilCadastroPorCodigo(idEmpresa, codigo);
+    if (!perfilAtualizado) {
+      throw new BadRequestException('Nao foi possivel carregar o perfil atualizado.');
+    }
+
+    return perfilAtualizado;
+  }
+
   async obterPermissoesPerfisEmpresa(idEmpresa: number) {
     await this.garantirEstrutura();
+    await this.garantirPerfisEmpresa(idEmpresa);
     if (!this.persistenciaPermissoesDisponivel) {
       return {
         ADM: this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL.ADM),
         GESTOR: this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL.GESTOR),
         OPERADOR: this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL.OPERADOR),
-      };
+      } as Record<string, PermissoesSistema>;
     }
 
-    const linhas = await this.dataSource.query(
-      `
-      SELECT perfil, permissoes
-      FROM app.perfil_permissoes
-      WHERE id_empresa = $1
-      `,
-      [idEmpresa],
-    );
+    const [linhasPerfil, linhasPermissao] = await Promise.all([
+      this.dataSource.query(
+        `
+        SELECT codigo, perfil_base
+        FROM app.perfis_usuario
+        WHERE id_empresa = $1
+        `,
+        [idEmpresa],
+      ) as Promise<PerfilCadastroRow[]>,
+      this.dataSource.query(
+        `
+        SELECT perfil, permissoes
+        FROM app.perfil_permissoes
+        WHERE id_empresa = $1
+        `,
+        [idEmpresa],
+      ) as Promise<PerfilPermissoesRow[]>,
+    ]);
 
-    const porPerfil = new Map<PerfilUsuario, PermissoesParciaisSistema>();
+    const permissoesCustomizadasPorPerfil = new Map<string, PermissoesSistema>();
 
-    for (const linha of linhas as PerfilPermissoesRow[]) {
-      const perfil = this.normalizarPerfil(this.lerTexto(linha.perfil));
-      const permissoesParciais = this.normalizarPermissoesParciais(
+    for (const linha of linhasPermissao) {
+      const perfil = this.normalizarPerfilTalvez(this.lerTexto(linha.perfil));
+      if (!perfil) {
+        continue;
+      }
+
+      const permissoesCompletas = this.normalizarPermissoesCompletas(
         this.parseJsonTalvez(linha.permissoes),
       );
-      porPerfil.set(perfil, permissoesParciais);
+      permissoesCustomizadasPorPerfil.set(perfil, permissoesCompletas);
     }
 
-    const resposta = {} as Record<PerfilUsuario, PermissoesSistema>;
-    for (const perfil of PERFIS_USUARIO) {
-      const base = this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL[perfil]);
-      if (perfil === 'ADM') {
-        resposta[perfil] = base;
-      } else {
-        resposta[perfil] = this.aplicarOverrides(base, porPerfil.get(perfil) ?? {});
+    const resposta = {} as Record<string, PermissoesSistema>;
+    for (const linha of linhasPerfil) {
+      const codigoPerfil = this.normalizarPerfilTalvez(this.lerTexto(linha.codigo));
+      if (!codigoPerfil) {
+        continue;
+      }
+
+      if (codigoPerfil === 'ADM') {
+        resposta[codigoPerfil] = this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL.ADM);
+        continue;
+      }
+
+      const perfilBase = this.normalizarPerfilBase(
+        this.lerTexto(linha.perfil_base) || PERFIL_BASE_PADRAO,
+        false,
+      );
+      const base = this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL[perfilBase]);
+      resposta[codigoPerfil] = permissoesCustomizadasPorPerfil.get(codigoPerfil) ?? base;
+    }
+
+    for (const perfilBase of PERFIS_BASE) {
+      if (!resposta[perfilBase]) {
+        resposta[perfilBase] = this.clonarPermissoes(
+          PERMISSOES_PADRAO_PERFIL[perfilBase],
+        );
       }
     }
 
@@ -211,7 +545,10 @@ export class PermissoesService {
       this.obterOverrideUsuario(idEmpresa, idUsuario),
     ]);
 
-    const basePerfil = this.clonarPermissoes(permissoesPerfis[perfilNormalizado]);
+    const basePerfil = this.clonarPermissoes(
+      permissoesPerfis[perfilNormalizado] ??
+        this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL.OPERADOR),
+    );
     return this.aplicarOverrides(basePerfil, overrideUsuario ?? {});
   }
 
@@ -233,6 +570,7 @@ export class PermissoesService {
   ) {
     await this.garantirEstrutura();
     this.exigirPersistenciaDisponivel();
+    await this.garantirPerfisEmpresa(idEmpresa);
 
     const perfilNormalizado = this.normalizarPerfil(perfil);
     if (perfilNormalizado === 'ADM') {
@@ -241,7 +579,17 @@ export class PermissoesService {
       );
     }
 
-    const base = this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL[perfilNormalizado]);
+    const perfilCadastro = await this.obterPerfilCadastroPorCodigo(
+      idEmpresa,
+      perfilNormalizado,
+    );
+    if (!perfilCadastro) {
+      throw new BadRequestException('Perfil nao encontrado para a empresa logada.');
+    }
+
+    const base = this.clonarPermissoes(
+      PERMISSOES_PADRAO_PERFIL[perfilCadastro.perfilBase],
+    );
     const overrides = this.normalizarPermissoesParciais(permissoes, true);
     const efetivas = this.aplicarOverrides(base, overrides);
 
@@ -450,6 +798,34 @@ export class PermissoesService {
     return semQuery.startsWith('/') ? semQuery : `/${semQuery}`;
   }
 
+  private normalizarPermissoesCompletas(valor: unknown): PermissoesSistema {
+    const base = this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL.OPERADOR);
+    if (!valor || typeof valor !== 'object' || Array.isArray(valor)) {
+      return base;
+    }
+
+    const entrada = valor as Record<string, unknown>;
+    for (const modulo of MODULOS_SISTEMA) {
+      const moduloValor = entrada[modulo];
+      if (
+        !moduloValor ||
+        typeof moduloValor !== 'object' ||
+        Array.isArray(moduloValor)
+      ) {
+        continue;
+      }
+
+      const parcial = moduloValor as Record<string, unknown>;
+      for (const acao of ACOES_PERMISSAO) {
+        if (typeof parcial[acao] === 'boolean') {
+          base[modulo][acao] = Boolean(parcial[acao]);
+        }
+      }
+    }
+
+    return base;
+  }
+
   private normalizarPermissoesParciais(
     valor: unknown,
     estrito = false,
@@ -591,6 +967,314 @@ export class PermissoesService {
     return 0;
   }
 
+  private lerBoolean(valor: unknown, fallback = false) {
+    if (typeof valor === 'boolean') {
+      return valor;
+    }
+
+    if (typeof valor === 'number') {
+      return valor !== 0;
+    }
+
+    if (typeof valor === 'string') {
+      const texto = valor.trim().toLowerCase();
+      if (texto === 'true' || texto === 't' || texto === '1') {
+        return true;
+      }
+      if (texto === 'false' || texto === 'f' || texto === '0') {
+        return false;
+      }
+    }
+
+    return fallback;
+  }
+
+  private normalizarTextoOpcional(valor: string | undefined): string {
+    if (!valor) {
+      return '';
+    }
+    return valor.trim();
+  }
+
+  private normalizarTextoObrigatorio(valor: string | undefined, campo: string): string {
+    const texto = (valor ?? '').trim();
+    if (!texto) {
+      throw new BadRequestException(`${campo} e obrigatorio.`);
+    }
+    return texto;
+  }
+
+  private normalizarCodigoPerfil(valor: string | undefined): string {
+    return (valor ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^A-Z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  private normalizarPerfilTalvez(valor: string | undefined): string | null {
+    const codigo = this.normalizarCodigoPerfil(valor);
+    if (!PERFIL_CODIGO_REGEX.test(codigo)) {
+      return null;
+    }
+    return codigo;
+  }
+
+  private gerarCodigoPerfil(nome: string): string {
+    const base = this.normalizarCodigoPerfil(nome);
+    if (PERFIL_CODIGO_REGEX.test(base)) {
+      return base;
+    }
+
+    const timestamp = Date.now().toString().slice(-6);
+    const fallback = `PERFIL_${timestamp}`;
+    if (PERFIL_CODIGO_REGEX.test(fallback)) {
+      return fallback;
+    }
+
+    return 'PERFIL_CUSTOM';
+  }
+
+  private async obterVinculosUsuariosPorPerfil(idEmpresa: number) {
+    const linhas = (await this.dataSource.query(
+      `
+      SELECT
+        id_usuario,
+        nome,
+        email,
+        ativo,
+        perfil
+      FROM app.usuarios
+      WHERE id_empresa = $1
+      ORDER BY nome ASC
+      `,
+      [idEmpresa],
+    )) as UsuarioPerfilRow[];
+
+    const vinculos: Record<string, PerfilUsuarioVinculado[]> = {};
+
+    for (const linha of linhas) {
+      const perfil = this.normalizarPerfilTalvez(this.lerTexto(linha.perfil));
+      const idUsuario = this.lerNumero(linha.id_usuario);
+
+      if (!perfil || !idUsuario || idUsuario <= 0) {
+        continue;
+      }
+
+      if (!vinculos[perfil]) {
+        vinculos[perfil] = [];
+      }
+
+      vinculos[perfil].push({
+        idUsuario,
+        nome: this.lerTexto(linha.nome) || `USUARIO ${idUsuario}`,
+        email: this.lerTexto(linha.email),
+        ativo: this.lerBoolean(linha.ativo, true),
+      });
+    }
+
+    return vinculos;
+  }
+
+  private mapearPerfilCadastro(
+    linha: PerfilCadastroRow,
+    permissoesPerfil: Record<string, PermissoesSistema>,
+    vinculos: Record<string, PerfilUsuarioVinculado[]>,
+  ): PerfilSistemaCadastro | null {
+    const codigo = this.normalizarPerfilTalvez(this.lerTexto(linha.codigo));
+    if (!codigo) {
+      return null;
+    }
+
+    const perfilBase = this.normalizarPerfilBase(
+      this.lerTexto(linha.perfil_base) || PERFIL_BASE_PADRAO,
+      false,
+    );
+    const usuariosVinculados = vinculos[codigo] ?? [];
+    const permissoes =
+      permissoesPerfil[codigo] ??
+      this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL[perfilBase]);
+
+    return {
+      codigo,
+      nome: this.lerTexto(linha.nome) || codigo,
+      descricao: this.lerTexto(linha.descricao),
+      ativo: this.lerBoolean(linha.ativo, true),
+      fixo: this.lerBoolean(linha.fixo, false),
+      perfilBase,
+      quantidadeUsuarios: usuariosVinculados.length,
+      usuariosVinculados,
+      permissoes,
+    };
+  }
+
+  private async listarPerfisFallbackSemPersistencia(idEmpresa: number) {
+    const perfisBase = PERFIS_BASE.map((perfilBase) => ({
+      codigo: perfilBase,
+      nome:
+        perfilBase === 'ADM'
+          ? 'Administrador'
+          : perfilBase === 'GESTOR'
+            ? 'Gestor'
+            : 'Operador',
+      descricao: '',
+      ativo: true,
+      fixo: perfilBase === 'ADM',
+      perfilBase,
+      quantidadeUsuarios: 0,
+      usuariosVinculados: [] as PerfilUsuarioVinculado[],
+      permissoes: this.clonarPermissoes(PERMISSOES_PADRAO_PERFIL[perfilBase]),
+    }));
+
+    const vinculos = await this.obterVinculosUsuariosPorPerfil(idEmpresa);
+    for (const perfil of perfisBase) {
+      const usuarios = vinculos[perfil.codigo] ?? [];
+      perfil.usuariosVinculados = usuarios;
+      perfil.quantidadeUsuarios = usuarios.length;
+    }
+
+    return perfisBase;
+  }
+
+  private async garantirPerfisEmpresa(idEmpresa: number) {
+    if (!this.persistenciaPermissoesDisponivel) {
+      return;
+    }
+
+    await this.inserirPerfisBaseEmpresa(idEmpresa);
+    await this.sincronizarPerfisComUsuarios(idEmpresa);
+  }
+
+  private async inserirPerfisBaseEmpresa(idEmpresa: number) {
+    await this.dataSource.query(
+      `
+      INSERT INTO app.perfis_usuario (
+        id_empresa,
+        codigo,
+        nome,
+        descricao,
+        perfil_base,
+        ativo,
+        fixo,
+        usuario_atualizacao,
+        criado_em,
+        atualizado_em
+      )
+      VALUES
+        ($1, 'ADM', 'Administrador', 'Acesso total do sistema.', 'ADM', TRUE, TRUE, 'SISTEMA', NOW(), NOW()),
+        ($1, 'GESTOR', 'Gestor', 'Acesso amplo sem administracao de usuarios por padrao.', 'GESTOR', TRUE, FALSE, 'SISTEMA', NOW(), NOW()),
+        ($1, 'OPERADOR', 'Operador', 'Operacao diaria com permissoes restritas por padrao.', 'OPERADOR', TRUE, FALSE, 'SISTEMA', NOW(), NOW())
+      ON CONFLICT (id_empresa, codigo)
+      DO NOTHING
+      `,
+      [idEmpresa],
+    );
+  }
+
+  private async sincronizarPerfisComUsuarios(idEmpresa: number) {
+    await this.dataSource.query(
+      `
+      INSERT INTO app.perfis_usuario (
+        id_empresa,
+        codigo,
+        nome,
+        descricao,
+        perfil_base,
+        ativo,
+        fixo,
+        usuario_atualizacao,
+        criado_em,
+        atualizado_em
+      )
+      SELECT
+        $1,
+        base.perfil_codigo,
+        base.perfil_codigo,
+        '',
+        $2,
+        TRUE,
+        FALSE,
+        'SISTEMA',
+        NOW(),
+        NOW()
+      FROM (
+        SELECT DISTINCT
+          NULLIF(
+            REGEXP_REPLACE(
+              UPPER(TRIM(perfil)),
+              '[^A-Z0-9_-]+',
+              '_',
+              'g'
+            ),
+            ''
+          ) AS perfil_codigo
+        FROM app.usuarios
+        WHERE id_empresa = $1
+          AND perfil IS NOT NULL
+          AND TRIM(perfil) <> ''
+      ) AS base
+      LEFT JOIN app.perfis_usuario existente
+        ON existente.id_empresa = $1
+       AND existente.codigo = base.perfil_codigo
+      WHERE base.perfil_codigo IS NOT NULL
+        AND CHAR_LENGTH(base.perfil_codigo) >= 2
+        AND existente.id_perfil IS NULL
+      `,
+      [idEmpresa, PERFIL_BASE_PADRAO],
+    );
+  }
+
+  private async ajustarRestricaoPerfilUsuarios() {
+    try {
+      const constraints = (await this.dataSource.query(
+        `
+        SELECT c.conname AS nome
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = 'app'
+          AND t.relname = 'usuarios'
+          AND c.contype = 'c'
+          AND pg_get_constraintdef(c.oid) ILIKE '%perfil%'
+        `,
+      )) as Array<{ nome?: unknown }>;
+      let jaTemConstraintPadrao = false;
+
+      for (const item of constraints) {
+        const nome = this.lerTexto(item.nome);
+        if (!nome) {
+          continue;
+        }
+
+        if (nome === 'ck_usuarios_perfil_nao_vazio') {
+          jaTemConstraintPadrao = true;
+          continue;
+        }
+
+        const nomeEscapado = nome.replace(/"/g, '""');
+        await this.dataSource.query(
+          `ALTER TABLE app.usuarios DROP CONSTRAINT IF EXISTS "${nomeEscapado}"`,
+        );
+      }
+
+      if (!jaTemConstraintPadrao) {
+        await this.dataSource.query(`
+          ALTER TABLE app.usuarios
+          ADD CONSTRAINT ck_usuarios_perfil_nao_vazio
+          CHECK (CHAR_LENGTH(TRIM(perfil)) >= 2)
+        `);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel ajustar constraint de perfil em app.usuarios. message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+      );
+    }
+  }
+
   private async garantirEstrutura() {
     if (this.estruturaInicializada) {
       return;
@@ -607,7 +1291,7 @@ export class PermissoesService {
           CREATE TABLE IF NOT EXISTS app.perfil_permissoes (
             id_perfil_permissao BIGSERIAL PRIMARY KEY,
             id_empresa BIGINT NOT NULL,
-            perfil VARCHAR(20) NOT NULL,
+            perfil VARCHAR(40) NOT NULL,
             permissoes JSONB NOT NULL DEFAULT '{}'::jsonb,
             usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
             criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -637,6 +1321,28 @@ export class PermissoesService {
           ON app.usuario_permissoes (id_empresa, id_usuario)
         `);
 
+        await this.dataSource.query(`
+          CREATE TABLE IF NOT EXISTS app.perfis_usuario (
+            id_perfil BIGSERIAL PRIMARY KEY,
+            id_empresa BIGINT NOT NULL,
+            codigo VARCHAR(40) NOT NULL,
+            nome VARCHAR(120) NOT NULL,
+            descricao TEXT NOT NULL DEFAULT '',
+            perfil_base VARCHAR(20) NOT NULL DEFAULT 'OPERADOR',
+            ativo BOOLEAN NOT NULL DEFAULT TRUE,
+            fixo BOOLEAN NOT NULL DEFAULT FALSE,
+            usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
+            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+
+        await this.dataSource.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS ux_perfis_usuario_empresa_codigo
+          ON app.perfis_usuario (id_empresa, codigo)
+        `);
+
+        await this.ajustarRestricaoPerfilUsuarios();
         this.estruturaInicializada = true;
       } catch (error) {
         this.logger.error(
@@ -658,7 +1364,7 @@ export class PermissoesService {
     }
 
     throw new BadRequestException(
-      'Estrutura de permissoes nao disponivel no banco. Contate o suporte para habilitar app.perfil_permissoes e app.usuario_permissoes.',
+      'Estrutura de permissoes nao disponivel no banco. Contate o suporte para habilitar app.perfil_permissoes, app.usuario_permissoes e app.perfis_usuario.',
     );
   }
 }
