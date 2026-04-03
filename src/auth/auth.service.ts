@@ -17,7 +17,11 @@ import { LoginDto } from './dto/login.dto';
 import { EmpresaEntity } from './entities/empresa.entity';
 import { UsuarioEntity } from './entities/usuario.entity';
 import { avaliarLicencaEmpresa } from './licenca.util';
-import { PermissoesParciaisSistema, PermissoesSistema } from './permissoes.constants';
+import {
+  PERFIL_BASE_PADRAO,
+  PermissoesParciaisSistema,
+  PermissoesSistema,
+} from './permissoes.constants';
 import { PermissoesService } from './permissoes.service';
 
 @Injectable()
@@ -558,52 +562,53 @@ export class AuthService {
 
     const usuarioCriadoId = Number(resultado.usuario?.idUsuario ?? 0);
 
-    if (
-      dados.permissoesUsuario &&
-      Number.isFinite(usuarioCriadoId) &&
-      usuarioCriadoId > 0
-    ) {
-      await this.permissoesService.atualizarPermissoesUsuario(
-        idEmpresa,
-        usuarioCriadoId,
-        dados.permissoesUsuario,
-        usuarioAtualizacao,
-      );
-    }
-
     if (!Number.isFinite(usuarioCriadoId) || usuarioCriadoId <= 0) {
       return resultado;
     }
 
-    await this.permissoesService.atualizarPerfilVinculadoUsuario(
-      idEmpresa,
-      usuarioCriadoId,
-      perfilCadastro.codigo,
-      this.normalizarTextoMaiusculo(usuarioAtualizacao),
-    );
-
-    const permissoesEfetivas =
-      await this.permissoesService.obterPermissoesEfetivasUsuario(
+    try {
+      await this.permissoesService.atualizarPerfilVinculadoUsuario(
         idEmpresa,
         usuarioCriadoId,
         perfilCadastro.codigo,
-      );
-    const permissoesUsuario =
-      await this.permissoesService.obterPermissoesUsuarioCustomizadas(
-        idEmpresa,
-        usuarioCriadoId,
+        this.normalizarTextoMaiusculo(usuarioAtualizacao),
       );
 
-    return {
-      ...resultado,
-      usuario: {
-        ...resultado.usuario,
-        perfil: perfilCadastro.codigo,
-        perfilNome: perfilCadastro.nome,
-        permissoesUsuario,
-        permissoesEfetivas,
-      },
-    };
+      if (dados.permissoesUsuario) {
+        await this.permissoesService.atualizarPermissoesUsuario(
+          idEmpresa,
+          usuarioCriadoId,
+          dados.permissoesUsuario,
+          usuarioAtualizacao,
+        );
+      }
+
+      const permissoesEfetivas =
+        await this.permissoesService.obterPermissoesEfetivasUsuario(
+          idEmpresa,
+          usuarioCriadoId,
+          perfilCadastro.codigo,
+        );
+      const permissoesUsuario =
+        await this.permissoesService.obterPermissoesUsuarioCustomizadas(
+          idEmpresa,
+          usuarioCriadoId,
+        );
+
+      return {
+        ...resultado,
+        usuario: {
+          ...resultado.usuario,
+          perfil: perfilCadastro.codigo,
+          perfilNome: perfilCadastro.nome,
+          permissoesUsuario,
+          permissoesEfetivas,
+        },
+      };
+    } catch (error) {
+      await this.removerUsuarioEmFalhaCadastro(idEmpresa, usuarioCriadoId);
+      throw error;
+    }
   }
 
   async atualizarUsuarioSistema(
@@ -623,6 +628,9 @@ export class AuthService {
       );
     }
 
+    const perfilPersistenciaOriginal = this.normalizarPerfilSistema(
+      usuario.perfil,
+    );
     const perfilAtualCodigo = await this.permissoesService.resolverPerfilUsuario(
       idEmpresa,
       idUsuario,
@@ -692,11 +700,13 @@ export class AuthService {
       dados.usuarioAtualizacao ?? usuarioAtualizacao,
     );
 
+    let usuarioSalvo = false;
     try {
       const atualizado = await this.salvarUsuarioComPerfisAlternativos(
         usuario,
         perfisPersistencia,
       );
+      usuarioSalvo = true;
 
       if (dados.perfil !== undefined) {
         await this.permissoesService.atualizarPerfilVinculadoUsuario(
@@ -739,6 +749,14 @@ export class AuthService {
         }),
       };
     } catch (error) {
+      if (usuarioSalvo && dados.perfil !== undefined) {
+        await this.restaurarPerfilPersistenciaUsuario(
+          idEmpresa,
+          idUsuario,
+          perfilPersistenciaOriginal,
+          usuario.usuarioAtualizacao,
+        );
+      }
       this.tratarErroCadastroUsuario(error);
     }
   }
@@ -826,10 +844,12 @@ export class AuthService {
       }
     }
 
-    adicionarPerfil('OPERADOR');
+    adicionarPerfil(PERFIL_BASE_PADRAO);
+    adicionarPerfil('GESTOR');
+    adicionarPerfil('ADM');
 
     if (perfis.size === 0) {
-      perfis.add('OPERADOR');
+      perfis.add(PERFIL_BASE_PADRAO);
     }
 
     return Array.from(perfis);
@@ -862,6 +882,47 @@ export class AuthService {
     }
 
     this.tratarErroCadastroUsuario(ultimoErro);
+  }
+
+  private async removerUsuarioEmFalhaCadastro(
+    idEmpresa: number,
+    idUsuario: number,
+  ) {
+    if (!Number.isFinite(idUsuario) || idUsuario <= 0) {
+      return;
+    }
+
+    try {
+      await this.usuarioRepository.delete({
+        idUsuario: String(idUsuario),
+        idEmpresa: String(idEmpresa),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao remover usuario apos erro de cadastro. idEmpresa=${idEmpresa} idUsuario=${idUsuario} message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+      );
+    }
+  }
+
+  private async restaurarPerfilPersistenciaUsuario(
+    idEmpresa: number,
+    idUsuario: number,
+    perfilOriginal: string,
+    usuarioAtualizacao: string,
+  ) {
+    try {
+      await this.usuarioRepository.update(
+        { idUsuario: String(idUsuario), idEmpresa: String(idEmpresa) },
+        {
+          perfil: perfilOriginal,
+          usuarioAtualizacao,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Falha ao restaurar perfil persistido do usuario apos erro de atualizacao. idEmpresa=${idEmpresa} idUsuario=${idUsuario} message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+      );
+    }
   }
 
   private normalizarPerfilSistema(perfil: string | undefined) {
