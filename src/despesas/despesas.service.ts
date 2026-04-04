@@ -19,6 +19,7 @@ type MapaColunasDespesa = {
   idVeiculo: string;
   idMotorista: string | null;
   idViagem: string | null;
+  ativo: string | null;
   data: string;
   tipo: string;
   descricao: string | null;
@@ -35,6 +36,7 @@ type DespesaNormalizada = {
   idVeiculo: number | null;
   idMotorista: number | null;
   idViagem: number | null;
+  ativo: boolean;
   data: Date;
   tipo: string;
   tipoDescricao: string;
@@ -89,11 +91,16 @@ export class DespesasService {
   async listarTodas(idEmpresa: number) {
     return this.executarComRls(idEmpresa, async (manager, colunas) => {
       const filtros: string[] = [];
-      const valores: Array<string | number> = [];
+      const valores: Array<string | number | boolean> = [];
 
       if (colunas.idEmpresa) {
         valores.push(String(idEmpresa));
         filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+      }
+
+      if (colunas.ativo) {
+        valores.push(true);
+        filtros.push(`${this.quote(colunas.ativo)} = $${valores.length}`);
       }
 
       const sql = [
@@ -122,7 +129,7 @@ export class DespesasService {
 
     return this.executarComRls(idEmpresa, async (manager, colunas) => {
       const filtros: string[] = [];
-      const valores: Array<string | number> = [];
+      const valores: Array<string | number | boolean> = [];
 
       if (colunas.idEmpresa) {
         valores.push(String(idEmpresa));
@@ -132,6 +139,12 @@ export class DespesasService {
       if (filtro.idDespesa !== undefined) {
         valores.push(filtro.idDespesa);
         filtros.push(`${this.quote(colunas.idDespesa)} = $${valores.length}`);
+      }
+
+      const situacaoFiltro = this.resolverSituacaoFiltro(filtro.situacao);
+      if (colunas.ativo && situacaoFiltro !== 'TODOS') {
+        valores.push(situacaoFiltro === 'ATIVO');
+        filtros.push(`${this.quote(colunas.ativo)} = $${valores.length}`);
       }
 
       if (filtro.idVeiculo !== undefined) {
@@ -332,7 +345,12 @@ export class DespesasService {
 
         const despesa = this.mapearRegistro(registro, colunas);
         if (despesa.idViagem !== null) {
-          await this.recalcularTotaisViagem(manager, idEmpresa, despesa.idViagem);
+          await this.recalcularTotaisViagem(
+            manager,
+            idEmpresa,
+            despesa.idViagem,
+            colunas.ativo !== null,
+          );
         }
 
         return {
@@ -473,6 +491,7 @@ export class DespesasService {
           idEmpresa,
           atual.idViagem,
           despesaAtualizada.idViagem,
+          colunas.ativo !== null,
         );
 
         return {
@@ -499,9 +518,17 @@ export class DespesasService {
         filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
       }
 
+      if (!colunas.ativo) {
+        throw new BadRequestException(
+          'A coluna ativo nao esta disponivel em app.despesas. Nao e possivel inativar o registro neste ambiente.',
+        );
+      }
+
       const sql = `
-        DELETE FROM app.despesas
+        UPDATE app.despesas
+        SET ${this.quote(colunas.ativo)} = false
         WHERE ${filtros.join(' AND ')}
+          AND ${this.quote(colunas.ativo)} = true
         RETURNING *
       `;
 
@@ -519,12 +546,13 @@ export class DespesasService {
           manager,
           idEmpresa,
           despesaRemovida.idViagem,
+          colunas.ativo !== null,
         );
       }
 
       return {
         sucesso: true,
-        mensagem: 'Despesa removida com sucesso.',
+        mensagem: 'Despesa inativada com sucesso.',
         idDespesa,
       };
     });
@@ -547,6 +575,8 @@ export class DespesasService {
   private async carregarMapaColunas(
     manager: EntityManager,
   ): Promise<MapaColunasDespesa> {
+    await this.garantirColunaAtivo(manager);
+
     const rows = (await manager.query(`
       SELECT column_name
       FROM information_schema.columns
@@ -588,6 +618,12 @@ export class DespesasService {
         'id da viagem',
         false,
       ),
+      ativo: this.encontrarColuna(
+        set,
+        ['ativo', 'status_ativo'],
+        'situacao ativa',
+        false,
+      ),
       data: this.encontrarColuna(
         set,
         ['data', 'data_despesa', 'data_lancamento'],
@@ -625,6 +661,21 @@ export class DespesasService {
         false,
       ),
     };
+  }
+
+  private async garantirColunaAtivo(manager: EntityManager): Promise<void> {
+    try {
+      await manager.query(`
+        ALTER TABLE app.despesas
+        ADD COLUMN IF NOT EXISTS ativo boolean NOT NULL DEFAULT true
+      `);
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel garantir coluna ativo em app.despesas. message=${
+          error instanceof Error ? error.message : 'Erro desconhecido'
+        }`,
+      );
+    }
   }
 
   private encontrarColuna(
@@ -819,6 +870,15 @@ export class DespesasService {
     }
   }
 
+  private resolverSituacaoFiltro(
+    situacao?: FiltroDespesasDto['situacao'],
+  ): 'ATIVO' | 'INATIVO' | 'TODOS' {
+    if (situacao === 'ATIVO' || situacao === 'INATIVO' || situacao === 'TODOS') {
+      return situacao;
+    }
+    return 'ATIVO';
+  }
+
   private resolverColunaOrdenacao(
     ordenarPor: FiltroDespesasDto['ordenarPor'],
     colunas: MapaColunasDespesa,
@@ -858,6 +918,10 @@ export class DespesasService {
         colunas.idViagem !== null
           ? this.converterNumero(registro[colunas.idViagem])
           : null,
+      ativo:
+        colunas.ativo !== null
+          ? this.converterBooleano(registro[colunas.ativo]) ?? true
+          : true,
       data: this.converterData(registro[colunas.data]) ?? new Date(0),
       tipo,
       tipoDescricao: this.descreverTipo(tipo, tipoRaw),
@@ -1035,6 +1099,7 @@ export class DespesasService {
     idEmpresa: number,
     idViagemAnterior: number | null,
     idViagemNova: number | null,
+    somenteAtivas: boolean,
   ) {
     const viagens = new Set<number>();
     if (idViagemAnterior && idViagemAnterior > 0) {
@@ -1045,7 +1110,12 @@ export class DespesasService {
     }
 
     for (const idViagem of viagens) {
-      await this.recalcularTotaisViagem(manager, idEmpresa, idViagem);
+      await this.recalcularTotaisViagem(
+        manager,
+        idEmpresa,
+        idViagem,
+        somenteAtivas,
+      );
     }
   }
 
@@ -1053,13 +1123,16 @@ export class DespesasService {
     manager: EntityManager,
     idEmpresa: number,
     idViagem: number,
+    somenteAtivas: boolean,
   ) {
+    const filtroAtivo = somenteAtivas ? 'AND COALESCE(ativo, true) = true' : '';
     const totalRows = (await manager.query(
       `
       SELECT COALESCE(SUM(COALESCE(valor, 0)), 0)::numeric AS total_despesas
       FROM app.despesas
       WHERE id_viagem = $1
         AND id_empresa = $2
+        ${filtroAtivo}
       `,
       [idViagem, String(idEmpresa)],
     )) as Array<{ total_despesas?: unknown }>;
@@ -1095,6 +1168,34 @@ export class DespesasService {
     }
     const numero = Number(valor);
     return Number.isFinite(numero) ? numero : null;
+  }
+
+  private converterBooleano(valor: unknown): boolean | null {
+    if (valor === null || valor === undefined) {
+      return null;
+    }
+
+    if (typeof valor === 'boolean') {
+      return valor;
+    }
+
+    if (typeof valor === 'number') {
+      if (valor === 1) return true;
+      if (valor === 0) return false;
+      return null;
+    }
+
+    if (typeof valor === 'string') {
+      const normalizado = valor.trim().toLowerCase();
+      if (normalizado === 'true' || normalizado === 't' || normalizado === '1') {
+        return true;
+      }
+      if (normalizado === 'false' || normalizado === 'f' || normalizado === '0') {
+        return false;
+      }
+    }
+
+    return null;
   }
 
   private converterData(valor: unknown): Date | null {

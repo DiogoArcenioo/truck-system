@@ -118,6 +118,13 @@ export class FiltroDespesasDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toUpperCase() : value,
   )
+  @IsIn(['ATIVO', 'INATIVO', 'TODOS'])
+  situacao?: 'ATIVO' | 'INATIVO' | 'TODOS';
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
   @IsIn(['ASC', 'DESC'])
   ordem?: 'ASC' | 'DESC';
 }
