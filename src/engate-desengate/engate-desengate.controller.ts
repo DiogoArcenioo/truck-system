@@ -25,7 +25,9 @@ type RequisicaoAutenticada = {
 @Controller('api/engate-desengate')
 @UseGuards(JwtAuthGuard)
 export class EngateDesengateController {
-  constructor(private readonly engateDesengateService: EngateDesengateService) {}
+  constructor(
+    private readonly engateDesengateService: EngateDesengateService,
+  ) {}
 
   @Get()
   async listarTodos(@Req() request: RequisicaoAutenticada) {
@@ -39,7 +41,10 @@ export class EngateDesengateController {
     @Query() filtro: FiltroEngateDesengateDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    return this.engateDesengateService.listarComFiltro(usuario.idEmpresa, filtro);
+    return this.engateDesengateService.listarComFiltro(
+      usuario.idEmpresa,
+      filtro,
+    );
   }
 
   @Get(':idEngate')
@@ -57,7 +62,11 @@ export class EngateDesengateController {
     @Body() dados: CriarEngateDesengateDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    return this.engateDesengateService.cadastrar(usuario.idEmpresa, dados, usuario);
+    return this.engateDesengateService.cadastrar(
+      usuario.idEmpresa,
+      dados,
+      usuario,
+    );
   }
 
   @Put(':idEngate')
@@ -67,7 +76,12 @@ export class EngateDesengateController {
     @Body() dados: AtualizarEngateDesengateDto,
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
-    return this.engateDesengateService.atualizar(usuario.idEmpresa, idEngate, dados, usuario);
+    return this.engateDesengateService.atualizar(
+      usuario.idEmpresa,
+      idEngate,
+      dados,
+      usuario,
+    );
   }
 
   @Delete(':idEngate')
@@ -79,7 +93,9 @@ export class EngateDesengateController {
     return this.engateDesengateService.remover(usuario.idEmpresa, idEngate);
   }
 
-  private obterUsuarioAutenticado(request: RequisicaoAutenticada): JwtUsuarioPayload {
+  private obterUsuarioAutenticado(
+    request: RequisicaoAutenticada,
+  ): JwtUsuarioPayload {
     if (!request.usuario) {
       throw new UnauthorizedException('Usuario nao autenticado.');
     }

@@ -10,16 +10,6 @@ import {
   Min,
 } from 'class-validator';
 
-const ordenacaoPermitida = [
-  'id_engate',
-  'data_inclusao',
-  'data_movi',
-  'tipo_engate',
-  'situacao',
-  'criado_em',
-  'atualizado_em',
-] as const;
-
 export class FiltroEngateDesengateDto {
   @IsOptional()
   @Type(() => Number)
@@ -66,8 +56,8 @@ export class FiltroEngateDesengateDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toUpperCase() : value,
   )
-  @IsIn(['A', 'I'])
-  situacao?: 'A' | 'I';
+  @IsIn(['ASC', 'DESC'])
+  ordem?: 'ASC' | 'DESC';
 
   @IsOptional()
   @Type(() => Number)
@@ -79,17 +69,26 @@ export class FiltroEngateDesengateDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(200)
   limite?: number;
 
   @IsOptional()
-  @IsIn(ordenacaoPermitida)
-  ordenarPor?: (typeof ordenacaoPermitida)[number];
-
-  @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
+    typeof value === 'string' ? value.trim() : value,
   )
-  @IsIn(['ASC', 'DESC'])
-  ordem?: 'ASC' | 'DESC';
+  @IsIn([
+    'id_engate',
+    'data_inclusao',
+    'data_movi',
+    'tipo_engate',
+    'criado_em',
+    'atualizado_em',
+  ])
+  ordenarPor?:
+    | 'id_engate'
+    | 'data_inclusao'
+    | 'data_movi'
+    | 'tipo_engate'
+    | 'criado_em'
+    | 'atualizado_em';
 }
