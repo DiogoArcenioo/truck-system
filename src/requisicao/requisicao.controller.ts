@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpException,
   InternalServerErrorException,
@@ -115,6 +116,35 @@ export class RequisicaoController {
 
       throw new InternalServerErrorException(
         `Falha inesperada ao atualizar requisicao. DEBUG: ${detalhe}`,
+      );
+    }
+  }
+
+  @Delete(':idRequisicao')
+  async excluir(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idRequisicao', ParseIntPipe) idRequisicao: number,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    try {
+      return await this.requisicaoService.excluir(
+        usuario.idEmpresa,
+        idRequisicao,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detalhe = this.descreverErro(error);
+
+      this.logger.error(
+        `Erro inesperado ao excluir requisicao. empresa=${usuario.idEmpresa}, idRequisicao=${idRequisicao}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new InternalServerErrorException(
+        `Falha inesperada ao excluir requisicao. DEBUG: ${detalhe}`,
       );
     }
   }

@@ -401,6 +401,13 @@ export class VeiculoService {
 
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
+        await this.validarDuplicidadeIdentificadores(
+          manager,
+          colunas,
+          idEmpresa,
+          payload,
+        );
+
         const campos: string[] = [];
         const valores: Array<string | number | null> = [];
 
@@ -542,6 +549,14 @@ export class VeiculoService {
           manager,
           colunas,
           idEmpresa,
+          idVeiculo,
+        );
+
+        await this.validarDuplicidadeIdentificadores(
+          manager,
+          colunas,
+          idEmpresa,
+          payload,
           idVeiculo,
         );
 
@@ -834,6 +849,69 @@ export class VeiculoService {
     }
 
     return registro;
+  }
+
+  private async validarDuplicidadeIdentificadores(
+    manager: EntityManager,
+    colunas: MapaColunasVeiculo,
+    idEmpresa: number,
+    payload:
+      | VeiculoPersistencia
+      | AtualizacaoVeiculoPersistencia,
+    idVeiculoAtual?: number,
+  ) {
+    const validacoes: Array<{
+      campo: 'renavam' | 'chassi';
+      valor: string | null | undefined;
+      coluna: string | null;
+      mensagem: string;
+    }> = [
+      {
+        campo: 'renavam',
+        valor: payload.renavam,
+        coluna: colunas.renavam,
+        mensagem: 'Ja existe outro veiculo cadastrado com este RENAVAM.',
+      },
+      {
+        campo: 'chassi',
+        valor: payload.chassi,
+        coluna: colunas.chassi,
+        mensagem: 'Ja existe outro veiculo cadastrado com este chassi.',
+      },
+    ];
+
+    for (const validacao of validacoes) {
+      if (!validacao.coluna || !validacao.valor) {
+        continue;
+      }
+
+      const filtros = [`${this.quote(validacao.coluna)} = $1`];
+      const valores: Array<string | number> = [validacao.valor];
+
+      if (colunas.idEmpresa) {
+        valores.push(String(idEmpresa));
+        filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+      }
+
+      if (idVeiculoAtual && Number.isFinite(idVeiculoAtual)) {
+        valores.push(idVeiculoAtual);
+        filtros.push(`${this.quote(colunas.idVeiculo)} <> $${valores.length}`);
+      }
+
+      const rows = (await manager.query(
+        `
+          SELECT ${this.quote(colunas.idVeiculo)} AS id_veiculo
+          FROM app.veiculo
+          WHERE ${filtros.join(' AND ')}
+          LIMIT 1
+        `,
+        valores,
+      )) as Array<{ id_veiculo?: string | number }>;
+
+      if (rows[0]?.id_veiculo !== undefined) {
+        throw new BadRequestException(validacao.mensagem);
+      }
+    }
   }
 
   private normalizarCriacao(

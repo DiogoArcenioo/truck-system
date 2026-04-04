@@ -108,14 +108,52 @@ export class MotoristasService {
   ) {
     try {
       return await this.executarComRls(idEmpresa, async (motoristaRepository) => {
+        this.validarCamposObrigatoriosCriacao(dados);
+        this.validarDocumentoCpf(dados.cpf);
+
+        const dataNascimento = this.normalizarDataObrigatoria(
+          dados.dataNascimento,
+          'data de nascimento',
+        );
+        const telefone1 = this.normalizarTelefoneObrigatorio(
+          dados.telefone1,
+          'telefone 1',
+        );
+        const telefone2 = this.normalizarTelefoneOpcionalValidado(
+          dados.telefone2,
+          'telefone 2',
+        );
+        const email = this.normalizarTextoOpcional(dados.email, 'email', false);
+        const dataAdmissao = this.normalizarDataOpcional(
+          dados.dataAdmissao,
+          'data de admissao',
+        );
+        const dataDemissao = this.normalizarDataOpcional(
+          dados.dataDemissao,
+          'data de demissao',
+        );
+
+        this.validarEmailOpcional(email);
+        this.validarConsistenciaDatas(dataNascimento, dataAdmissao, dataDemissao);
+
         const novo = motoristaRepository.create({
           idEmpresa: String(idEmpresa),
           nome: this.normalizarTexto(dados.nome),
           cpf: dados.cpf,
           cnh: this.normalizarTexto(dados.cnh),
+          dataNascimento,
+          email,
+          telefone1,
+          telefone2,
           categoriaCnh: dados.categoriaCnh,
           validadeCnh: this.normalizarData(dados.validadeCnh),
-          status: dados.status ?? 'A',
+          dataAdmissao,
+          dataDemissao,
+          tipoContrato: this.normalizarTextoOpcional(
+            dados.tipoContrato,
+            'tipo de contrato',
+          ),
+          status: 'A',
         });
 
         const motorista = await motoristaRepository.save(novo);
@@ -152,11 +190,37 @@ export class MotoristasService {
         }
 
         if (dados.cpf !== undefined) {
+          this.validarDocumentoCpf(dados.cpf);
           motorista.cpf = dados.cpf;
         }
 
         if (dados.cnh !== undefined) {
           motorista.cnh = this.normalizarTexto(dados.cnh);
+        }
+
+        if (dados.dataNascimento !== undefined) {
+          motorista.dataNascimento = this.normalizarDataOpcional(
+            dados.dataNascimento,
+            'data de nascimento',
+          );
+        }
+
+        if (dados.email !== undefined) {
+          motorista.email = this.normalizarTextoOpcional(dados.email, 'email', false);
+        }
+
+        if (dados.telefone1 !== undefined) {
+          motorista.telefone1 = this.normalizarTelefoneObrigatorio(
+            dados.telefone1,
+            'telefone 1',
+          );
+        }
+
+        if (dados.telefone2 !== undefined) {
+          motorista.telefone2 = this.normalizarTelefoneOpcionalValidado(
+            dados.telefone2,
+            'telefone 2',
+          );
         }
 
         if (dados.categoriaCnh !== undefined) {
@@ -167,9 +231,37 @@ export class MotoristasService {
           motorista.validadeCnh = this.normalizarData(dados.validadeCnh);
         }
 
+        if (dados.dataAdmissao !== undefined) {
+          motorista.dataAdmissao = this.normalizarDataOpcional(
+            dados.dataAdmissao,
+            'data de admissao',
+          );
+        }
+
+        if (dados.dataDemissao !== undefined) {
+          motorista.dataDemissao = this.normalizarDataOpcional(
+            dados.dataDemissao,
+            'data de demissao',
+          );
+        }
+
+        if (dados.tipoContrato !== undefined) {
+          motorista.tipoContrato = this.normalizarTextoOpcional(
+            dados.tipoContrato,
+            'tipo de contrato',
+          );
+        }
+
         if (dados.status !== undefined) {
           motorista.status = dados.status;
         }
+
+        this.validarEmailOpcional(motorista.email);
+        this.validarConsistenciaDatas(
+          motorista.dataNascimento,
+          motorista.dataAdmissao,
+          motorista.dataDemissao,
+        );
 
         const atualizado = await motoristaRepository.save(motorista);
 
@@ -306,6 +398,75 @@ export class MotoristasService {
     return texto;
   }
 
+  private validarCamposObrigatoriosCriacao(dados: CriarMotoristaDto) {
+    if (
+      !dados.nome?.trim() ||
+      !dados.cpf?.trim() ||
+      !dados.dataNascimento?.trim() ||
+      !dados.telefone1?.trim() ||
+      !dados.cnh?.trim() ||
+      !dados.categoriaCnh?.trim() ||
+      !dados.validadeCnh?.trim()
+    ) {
+      throw new BadRequestException(
+        'Preencha os campos obrigatorios: nome, CPF, data de nascimento, telefone 1, CNH, categoria e vencimento.',
+      );
+    }
+  }
+
+  private validarDocumentoCpf(cpf: string) {
+    const digitos = cpf.replace(/\D/g, '').trim();
+
+    if (digitos.length !== 11 || /^(\d)\1{10}$/.test(digitos)) {
+      throw new BadRequestException('CPF invalido. Confira os digitos informados.');
+    }
+
+    let soma = 0;
+    for (let indice = 0; indice < 9; indice += 1) {
+      soma += Number(digitos[indice]) * (10 - indice);
+    }
+
+    let resto = (soma * 10) % 11;
+    if (resto === 10) {
+      resto = 0;
+    }
+
+    if (resto !== Number(digitos[9])) {
+      throw new BadRequestException('CPF invalido. Confira os digitos informados.');
+    }
+
+    soma = 0;
+    for (let indice = 0; indice < 10; indice += 1) {
+      soma += Number(digitos[indice]) * (11 - indice);
+    }
+
+    resto = (soma * 10) % 11;
+    if (resto === 10) {
+      resto = 0;
+    }
+
+    if (resto !== Number(digitos[10])) {
+      throw new BadRequestException('CPF invalido. Confira os digitos informados.');
+    }
+  }
+
+  private normalizarTextoOpcional(
+    valor: string | null | undefined,
+    campo: string,
+    upperCase = true,
+  ): string | null {
+    if (valor === undefined || valor === null) {
+      return null;
+    }
+
+    const texto = valor.trim();
+    if (!texto) {
+      return null;
+    }
+
+    return upperCase ? texto.toUpperCase() : texto.toLowerCase();
+  }
+
   private normalizarData(valor: string): string {
     const data = new Date(valor);
     if (Number.isNaN(data.getTime())) {
@@ -315,21 +476,177 @@ export class MotoristasService {
     return data.toISOString().slice(0, 10);
   }
 
+  private normalizarDataObrigatoria(
+    valor: string | null | undefined,
+    descricaoCampo: string,
+  ): string {
+    const dataNormalizada = this.normalizarDataOpcional(valor, descricaoCampo);
+    if (!dataNormalizada) {
+      throw new BadRequestException(`Informe ${descricaoCampo}.`);
+    }
+
+    return dataNormalizada;
+  }
+
+  private normalizarDataOpcional(
+    valor: string | null | undefined,
+    descricaoCampo: string,
+  ): string | null {
+    if (valor === undefined || valor === null) {
+      return null;
+    }
+
+    const texto = valor.trim();
+    if (!texto) {
+      return null;
+    }
+
+    const data = new Date(texto);
+    if (Number.isNaN(data.getTime())) {
+      throw new BadRequestException(`Data invalida informada para ${descricaoCampo}.`);
+    }
+
+    return data.toISOString().slice(0, 10);
+  }
+
+  private normalizarTelefoneOpcional(valor: string | null | undefined): string | null {
+    if (valor === undefined || valor === null) {
+      return null;
+    }
+
+    const telefone = valor.replace(/\D/g, '').trim();
+    return telefone || null;
+  }
+
+  private normalizarTelefoneObrigatorio(
+    valor: string | null | undefined,
+    descricaoCampo: string,
+  ): string {
+    const telefone = this.normalizarTelefoneOpcional(valor);
+    if (!telefone) {
+      throw new BadRequestException(`Informe ${descricaoCampo}.`);
+    }
+
+    if (telefone.length !== 10 && telefone.length !== 11) {
+      throw new BadRequestException(
+        `${descricaoCampo.charAt(0).toUpperCase()}${descricaoCampo.slice(1)} invalido. Informe DDD e numero completos.`,
+      );
+    }
+
+    return telefone;
+  }
+
+  private normalizarTelefoneOpcionalValidado(
+    valor: string | null | undefined,
+    descricaoCampo: string,
+  ): string | null {
+    const telefone = this.normalizarTelefoneOpcional(valor);
+    if (!telefone) {
+      return null;
+    }
+
+    if (telefone.length !== 10 && telefone.length !== 11) {
+      throw new BadRequestException(
+        `${descricaoCampo.charAt(0).toUpperCase()}${descricaoCampo.slice(1)} invalido. Informe DDD e numero completos.`,
+      );
+    }
+
+    return telefone;
+  }
+
+  private validarEmailOpcional(email: string | null) {
+    if (!email) {
+      return;
+    }
+
+    const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailValido) {
+      throw new BadRequestException('Email invalido. Confira o endereco informado.');
+    }
+  }
+
+  private validarConsistenciaDatas(
+    dataNascimento: string | Date | null | undefined,
+    dataAdmissao: string | Date | null | undefined,
+    dataDemissao: string | Date | null | undefined,
+  ) {
+    if (!dataNascimento) {
+      return;
+    }
+
+    const nascimento = new Date(
+      `${this.formatarDataOpcional(dataNascimento)}T00:00:00`,
+    );
+
+    if (Number.isNaN(nascimento.getTime())) {
+      throw new BadRequestException('Data de nascimento invalida.');
+    }
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    if (nascimento >= hoje) {
+      throw new BadRequestException('Data de nascimento deve ser anterior a hoje.');
+    }
+
+    if (dataAdmissao) {
+      const admissao = new Date(
+        `${this.formatarDataOpcional(dataAdmissao)}T00:00:00`,
+      );
+
+      if (Number.isNaN(admissao.getTime())) {
+        throw new BadRequestException('Data de admissao invalida.');
+      }
+
+      if (admissao < nascimento) {
+        throw new BadRequestException(
+          'Data de admissao nao pode ser anterior a data de nascimento.',
+        );
+      }
+    }
+
+    if (dataAdmissao && dataDemissao) {
+      const admissao = new Date(
+        `${this.formatarDataOpcional(dataAdmissao)}T00:00:00`,
+      );
+      const demissao = new Date(
+        `${this.formatarDataOpcional(dataDemissao)}T00:00:00`,
+      );
+
+      if (demissao < admissao) {
+        throw new BadRequestException(
+          'Data de demissao deve ser maior ou igual a data de admissao.',
+        );
+      }
+    }
+  }
+
+  private formatarDataOpcional(valor: string | Date | null | undefined): string {
+    if (!valor) {
+      return '';
+    }
+
+    return valor instanceof Date ? valor.toISOString().slice(0, 10) : `${valor}`;
+  }
+
   private mapearMotorista(motorista: MotoristaEntity): ListarMotoristaDto {
     const statusNormalizado = (motorista.status ?? '').trim().toUpperCase();
-    const validadeBruta = motorista.validadeCnh as unknown;
-    const validadeCnh =
-      validadeBruta instanceof Date
-        ? validadeBruta.toISOString().slice(0, 10)
-        : `${validadeBruta}`;
+    const validadeCnh = this.formatarDataOpcional(motorista.validadeCnh as unknown as string | Date);
 
     return {
       idMotorista: motorista.idMotorista,
       nome: this.normalizarTexto(motorista.nome),
       cpf: motorista.cpf?.trim(),
       cnh: this.normalizarTexto(motorista.cnh),
+      dataNascimento: this.formatarDataOpcional(motorista.dataNascimento as unknown as string | Date | null),
+      email: motorista.email?.trim() ?? '',
+      telefone1: motorista.telefone1?.trim() ?? '',
+      telefone2: motorista.telefone2?.trim() ?? '',
       categoriaCnh: this.normalizarTexto(motorista.categoriaCnh),
       validadeCnh,
+      dataAdmissao: this.formatarDataOpcional(motorista.dataAdmissao as unknown as string | Date | null),
+      dataDemissao: this.formatarDataOpcional(motorista.dataDemissao as unknown as string | Date | null),
+      tipoContrato: motorista.tipoContrato?.trim() ?? '',
       status: statusNormalizado,
       statusDescricao:
         STATUS_MOTORISTA_LABEL_POR_CODIGO[

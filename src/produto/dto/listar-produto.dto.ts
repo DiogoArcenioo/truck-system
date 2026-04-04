@@ -1,6 +1,8 @@
 export class ListarProdutoDto {
   idProduto!: number;
   descricaoProduto!: string;
+  referencia!: string | null;
+  codigoOriginal!: string | null;
   dataCadastro!: string;
   idGrupoProduto!: number | null;
   idSubgrupo!: number | null;

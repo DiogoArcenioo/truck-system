@@ -72,7 +72,7 @@ export class ProdutoService {
       if (filtro.texto?.trim()) {
         valores.push(`%${filtro.texto.trim().toUpperCase()}%`);
         filtros.push(
-          `(UPPER(descricao_produto) LIKE $${valores.length} OR UPPER(COALESCE(observacao, '')) LIKE $${valores.length})`,
+          `(UPPER(descricao_produto) LIKE $${valores.length} OR UPPER(COALESCE(observacao, '')) LIKE $${valores.length} OR UPPER(COALESCE(referencia, '')) LIKE $${valores.length} OR UPPER(COALESCE(codigo_original, '')) LIKE $${valores.length})`,
         );
       }
 
@@ -155,6 +155,8 @@ export class ProdutoService {
           `
             INSERT INTO app.produto (
               descricao_produto,
+              referencia,
+              codigo_original,
               id_grupo_produto,
               id_subgrupo,
               observacao,
@@ -165,11 +167,13 @@ export class ProdutoService {
               tipo_produto,
               id_empresa
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
             RETURNING *
           `,
           [
             payload.descricaoProduto,
+            payload.referencia,
+            payload.codigoOriginal,
             payload.idGrupoProduto,
             payload.idSubgrupo,
             payload.observacao,
@@ -215,6 +219,14 @@ export class ProdutoService {
         const payload = this.normalizarAtualizacao(dados, usuarioJwt);
         const descricaoProduto =
           payload.descricaoProduto ?? this.converterTexto(atual.descricao_produto) ?? '';
+        const referencia =
+          payload.referencia !== undefined
+            ? payload.referencia
+            : this.converterTexto(atual.referencia);
+        const codigoOriginal =
+          payload.codigoOriginal !== undefined
+            ? payload.codigoOriginal
+            : this.converterTexto(atual.codigo_original);
         const idGrupoProduto =
           payload.idGrupoProduto ?? this.converterNumero(atual.id_grupo_produto);
         const idSubgrupo = payload.idSubgrupo ?? this.converterNumero(atual.id_subgrupo);
@@ -235,26 +247,38 @@ export class ProdutoService {
           this.converterTexto(atual.tipo_produto)?.trim().toUpperCase() ??
           'P';
 
+        this.validarCamposObrigatoriosProduto(
+          tipoProduto,
+          idGrupoProduto,
+          idSubgrupo,
+          idUn,
+          idMarca,
+        );
+
         const rows = (await manager.query(
           `
             UPDATE app.produto
             SET
               descricao_produto = $1,
-              id_grupo_produto = $2,
-              id_subgrupo = $3,
-              observacao = $4,
-              situacao = $5,
-              id_un = $6,
-              id_marca = $7,
-              usuario_atualizacao = $8,
-              tipo_produto = $9,
+              referencia = $2,
+              codigo_original = $3,
+              id_grupo_produto = $4,
+              id_subgrupo = $5,
+              observacao = $6,
+              situacao = $7,
+              id_un = $8,
+              id_marca = $9,
+              usuario_atualizacao = $10,
+              tipo_produto = $11,
               atualizado_em = NOW()
-            WHERE id_empresa = $10
-              AND id_produto = $11
+            WHERE id_empresa = $12
+              AND id_produto = $13
             RETURNING *
           `,
           [
             descricaoProduto,
+            referencia,
+            codigoOriginal,
             idGrupoProduto,
             idSubgrupo,
             observacao,
@@ -322,8 +346,14 @@ export class ProdutoService {
     dados: CriarProdutoDto,
     usuarioJwt: JwtUsuarioPayload,
   ) {
-    return {
+    const payload = {
       descricaoProduto: this.normalizarTexto(dados.descricaoProduto, 'descricaoProduto'),
+      referencia: dados.referencia?.trim()
+        ? this.normalizarTexto(dados.referencia, 'referencia')
+        : null,
+      codigoOriginal: dados.codigoOriginal?.trim()
+        ? this.normalizarTexto(dados.codigoOriginal, 'codigoOriginal')
+        : null,
       idGrupoProduto: dados.idGrupoProduto ?? null,
       idSubgrupo: dados.idSubgrupo ?? null,
       observacao: dados.observacao?.trim() ? dados.observacao.trim().toUpperCase() : null,
@@ -335,6 +365,16 @@ export class ProdutoService {
         : this.normalizarTexto(usuarioJwt.email, 'usuarioAtualizacao'),
       tipoProduto: dados.tipoProduto ?? 'P',
     };
+
+    this.validarCamposObrigatoriosProduto(
+      payload.tipoProduto,
+      payload.idGrupoProduto,
+      payload.idSubgrupo,
+      payload.idUn,
+      payload.idMarca,
+    );
+
+    return payload;
   }
 
   private normalizarAtualizacao(
@@ -345,6 +385,18 @@ export class ProdutoService {
       descricaoProduto:
         dados.descricaoProduto !== undefined
           ? this.normalizarTexto(dados.descricaoProduto, 'descricaoProduto')
+          : undefined,
+      referencia:
+        dados.referencia !== undefined
+          ? dados.referencia.trim()
+            ? this.normalizarTexto(dados.referencia, 'referencia')
+            : null
+          : undefined,
+      codigoOriginal:
+        dados.codigoOriginal !== undefined
+          ? dados.codigoOriginal.trim()
+            ? this.normalizarTexto(dados.codigoOriginal, 'codigoOriginal')
+            : null
           : undefined,
       idGrupoProduto: dados.idGrupoProduto,
       idSubgrupo: dados.idSubgrupo,
@@ -363,6 +415,24 @@ export class ProdutoService {
           : this.normalizarTexto(usuarioJwt.email, 'usuarioAtualizacao'),
       tipoProduto: dados.tipoProduto,
     };
+  }
+
+  private validarCamposObrigatoriosProduto(
+    tipoProduto: string | null | undefined,
+    idGrupoProduto: number | null | undefined,
+    idSubgrupo: number | null | undefined,
+    idUn: number | null | undefined,
+    idMarca: number | null | undefined,
+  ) {
+    if (tipoProduto !== 'P') {
+      return;
+    }
+
+    if (!idGrupoProduto || !idSubgrupo || !idUn || !idMarca) {
+      throw new BadRequestException(
+        'Para cadastrar ou atualizar um produto, os campos grupo, subgrupo, unidade e marca sao obrigatorios.',
+      );
+    }
   }
 
   private resolverColunaOrdenacao(
@@ -391,6 +461,8 @@ export class ProdutoService {
     return {
       idProduto: this.converterNumero(registro.id_produto) ?? 0,
       descricaoProduto: this.converterTexto(registro.descricao_produto) ?? 'SEM DESCRICAO',
+      referencia: this.converterTexto(registro.referencia),
+      codigoOriginal: this.converterTexto(registro.codigo_original),
       dataCadastro: this.converterDataIso(registro.data_cadastro) ?? '',
       idGrupoProduto: this.converterNumero(registro.id_grupo_produto),
       idSubgrupo: this.converterNumero(registro.id_subgrupo),
