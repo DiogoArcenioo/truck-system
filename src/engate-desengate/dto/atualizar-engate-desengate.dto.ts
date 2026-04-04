@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -41,13 +42,6 @@ export class AtualizarEngateDesengateDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toUpperCase() : value,
   )
-  @IsIn(['A', 'I'])
-  situacao?: 'A' | 'I';
-
-  @IsOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
   @IsString()
   @MaxLength(10)
   placa2?: string;
@@ -75,4 +69,32 @@ export class AtualizarEngateDesengateDto {
   @IsString()
   @MaxLength(120)
   usuarioAtualizacao?: string;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === true || value === 'true',
+  )
+  @IsBoolean()
+  desengatarMotorista?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === true || value === 'true',
+  )
+  @IsBoolean()
+  desengatarPlaca2?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === true || value === 'true',
+  )
+  @IsBoolean()
+  desengatarPlaca3?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === true || value === 'true',
+  )
+  @IsBoolean()
+  desengatarPlaca4?: boolean;
 }

@@ -20,7 +20,6 @@ type MapaColunasEngate = {
   idMotorista: string;
   dataInclusao: string;
   dataMovi: string;
-  situacao: string | null;
   tipoEngate: string;
   usuarioAtualizacao: string | null;
   placa2: string | null;
@@ -37,7 +36,6 @@ type EngateNormalizado = {
   idMotorista: number;
   dataInclusao: Date;
   dataMovi: Date;
-  situacao: string;
   tipoEngate: string;
   usuarioAtualizacao: string | null;
   placa2: string | null;
@@ -52,12 +50,15 @@ type EngatePersistencia = {
   idMotorista: number;
   dataInclusao: Date;
   dataMovi: Date;
-  situacao: string;
   tipoEngate: string;
   usuarioAtualizacao: string;
   placa2: string | null;
   placa3: string | null;
   placa4: string | null;
+  desengatarMotorista?: boolean;
+  desengatarPlaca2?: boolean;
+  desengatarPlaca3?: boolean;
+  desengatarPlaca4?: boolean;
 };
 
 @Injectable()
@@ -85,7 +86,7 @@ export class EngateDesengateService {
         .filter(Boolean)
         .join('\n');
 
-      const registros = (await manager.query(sql, valores)) as RegistroBanco[];
+      const registros = await manager.query(sql, valores);
       const movimentos = registros.map((registro) =>
         this.mapearRegistro(registro, colunas),
       );
@@ -120,11 +121,6 @@ export class EngateDesengateService {
       if (filtro.tipoEngate) {
         valores.push(filtro.tipoEngate);
         filtros.push(`${this.quote(colunas.tipoEngate)} = $${valores.length}`);
-      }
-
-      if (filtro.situacao && colunas.situacao) {
-        valores.push(filtro.situacao);
-        filtros.push(`${this.quote(colunas.situacao)} = $${valores.length}`);
       }
 
       if (filtro.dataDe) {
@@ -184,10 +180,8 @@ export class EngateDesengateService {
       `;
 
       const [countRows, registros] = await Promise.all([
-        manager.query(sqlCount, valores) as Promise<Array<{ total: number }>>,
-        manager.query(sqlDados, [...valores, limite, offset]) as Promise<
-          RegistroBanco[]
-        >,
+        manager.query(sqlCount, valores),
+        manager.query(sqlDados, [...valores, limite, offset]),
       ]);
 
       const movimentos = registros.map((registro) =>
@@ -231,68 +225,81 @@ export class EngateDesengateService {
     const payload = this.normalizarCriacao(dados, usuarioJwt);
 
     try {
-      return this.executarComRls(idEmpresa, async (manager, tabela, colunas) => {
-        await this.validarRecursosParaEngate(
-          manager,
-          tabela,
-          colunas,
-          idEmpresa,
-          payload,
-        );
+      return this.executarComRls(
+        idEmpresa,
+        async (manager, tabela, colunas) => {
+          await this.validarRecursosParaEngate(
+            manager,
+            tabela,
+            colunas,
+            idEmpresa,
+            payload,
+          );
 
-        const campos: string[] = [];
-        const valores: Array<string | number | Date | null> = [];
+          const campos: string[] = [];
+          const valores: Array<string | number | Date | null> = [];
 
-        const adicionarCampo = (
-          coluna: string | null,
-          valor: string | number | Date | null | undefined,
-        ) => {
-          if (!coluna || valor === undefined) {
-            return;
-          }
+          const adicionarCampo = (
+            coluna: string | null,
+            valor: string | number | Date | null | undefined,
+          ) => {
+            if (!coluna || valor === undefined) {
+              return;
+            }
 
-          campos.push(coluna);
-          valores.push(valor);
-        };
+            campos.push(coluna);
+            valores.push(valor);
+          };
 
-        adicionarCampo(colunas.idVeiculo, payload.idVeiculo);
-        adicionarCampo(colunas.idMotorista, payload.idMotorista);
-        adicionarCampo(colunas.dataInclusao, payload.dataInclusao);
-        adicionarCampo(colunas.dataMovi, payload.dataMovi);
-        adicionarCampo(colunas.tipoEngate, payload.tipoEngate);
-        adicionarCampo(colunas.situacao, payload.situacao);
-        adicionarCampo(colunas.usuarioAtualizacao, payload.usuarioAtualizacao);
-        adicionarCampo(colunas.placa2, payload.placa2);
-        adicionarCampo(colunas.placa3, payload.placa3);
-        adicionarCampo(colunas.placa4, payload.placa4);
-        adicionarCampo(colunas.criadoEm, new Date());
-        adicionarCampo(colunas.atualizadoEm, new Date());
-        adicionarCampo(colunas.idEmpresa, String(idEmpresa));
+          adicionarCampo(colunas.idVeiculo, payload.idVeiculo);
+          adicionarCampo(colunas.idMotorista, payload.idMotorista);
+          adicionarCampo(colunas.dataInclusao, payload.dataInclusao);
+          adicionarCampo(colunas.dataMovi, payload.dataMovi);
+          adicionarCampo(colunas.tipoEngate, payload.tipoEngate);
+          adicionarCampo(
+            colunas.usuarioAtualizacao,
+            payload.usuarioAtualizacao,
+          );
+          adicionarCampo(colunas.placa2, payload.placa2);
+          adicionarCampo(colunas.placa3, payload.placa3);
+          adicionarCampo(colunas.placa4, payload.placa4);
+          adicionarCampo(colunas.criadoEm, new Date());
+          adicionarCampo(colunas.atualizadoEm, new Date());
+          adicionarCampo(colunas.idEmpresa, String(idEmpresa));
 
-        const placeholders = valores
-          .map((_, index) => `$${index + 1}`)
-          .join(', ');
-        const sql = `
+          const placeholders = valores
+            .map((_, index) => `$${index + 1}`)
+            .join(', ');
+          const sql = `
           INSERT INTO app.${this.quoteIdentifier(tabela)} (${campos.map((campo) => this.quote(campo)).join(', ')})
           VALUES (${placeholders})
           RETURNING *
         `;
 
-        const rows = (await manager.query(sql, valores)) as RegistroBanco[];
-        const registro = rows[0];
+          const rows = await manager.query(sql, valores);
+          const registro = rows[0];
 
-        if (!registro) {
-          throw new BadRequestException(
-            'Falha ao cadastrar movimentacao de engate/desengate.',
+          if (!registro) {
+            throw new BadRequestException(
+              'Falha ao cadastrar movimentacao de engate/desengate.',
+            );
+          }
+
+          await this.sincronizarVeiculo(
+            manager,
+            payload as Partial<EngatePersistencia> & {
+              idVeiculo: number;
+              tipoEngate: string;
+            },
           );
-        }
 
-        return {
-          sucesso: true,
-          mensagem: 'Movimentacao cadastrada com sucesso.',
-          movimento: this.mapearRegistro(registro, colunas),
-        };
-      });
+          return {
+            sucesso: true,
+            mensagem: 'Movimentacao cadastrada com sucesso.',
+            movimento: this.mapearRegistro(registro, colunas),
+          };
+        },
+      );
     } catch (error) {
       this.tratarErroPersistencia(error, 'cadastrar');
     }
@@ -307,94 +314,106 @@ export class EngateDesengateService {
     const payload = this.normalizarAtualizacao(dados, usuarioJwt);
 
     try {
-      return this.executarComRls(idEmpresa, async (manager, tabela, colunas) => {
-        const atual = await this.buscarRegistroPorIdOuFalhar(
-          manager,
-          tabela,
-          colunas,
-          idEmpresa,
-          idEngate,
-        );
+      return this.executarComRls(
+        idEmpresa,
+        async (manager, tabela, colunas) => {
+          const atual = await this.buscarRegistroPorIdOuFalhar(
+            manager,
+            tabela,
+            colunas,
+            idEmpresa,
+            idEngate,
+          );
 
-        const movimentoAtual = this.mapearRegistro(atual, colunas);
-        const estadoFinal = this.montarEstadoFinalAtualizacao(
-          movimentoAtual,
-          payload,
-        );
-        await this.validarRecursosParaEngate(
-          manager,
-          tabela,
-          colunas,
-          idEmpresa,
-          estadoFinal,
-          idEngate,
-        );
+          const movimentoAtual = this.mapearRegistro(atual, colunas);
+          const estadoFinal = this.montarEstadoFinalAtualizacao(
+            movimentoAtual,
+            payload,
+          );
+          await this.validarRecursosParaEngate(
+            manager,
+            tabela,
+            colunas,
+            idEmpresa,
+            estadoFinal,
+            idEngate,
+          );
 
-        const sets: string[] = [];
-        const valores: Array<string | number | Date | null> = [];
+          const sets: string[] = [];
+          const valores: Array<string | number | Date | null> = [];
 
-        const adicionarSet = (
-          coluna: string | null,
-          valor: string | number | Date | null | undefined,
-        ) => {
-          if (!coluna || typeof valor === 'undefined') {
-            return;
+          const adicionarSet = (
+            coluna: string | null,
+            valor: string | number | Date | null | undefined,
+          ) => {
+            if (!coluna || typeof valor === 'undefined') {
+              return;
+            }
+
+            valores.push(valor);
+            sets.push(`${this.quote(coluna)} = $${valores.length}`);
+          };
+
+          adicionarSet(colunas.idVeiculo, payload.idVeiculo);
+          adicionarSet(colunas.idMotorista, payload.idMotorista);
+          adicionarSet(colunas.dataInclusao, payload.dataInclusao);
+          adicionarSet(colunas.dataMovi, payload.dataMovi);
+          adicionarSet(colunas.tipoEngate, payload.tipoEngate);
+          adicionarSet(colunas.usuarioAtualizacao, payload.usuarioAtualizacao);
+          adicionarSet(colunas.placa2, payload.placa2);
+          adicionarSet(colunas.placa3, payload.placa3);
+          adicionarSet(colunas.placa4, payload.placa4);
+          adicionarSet(colunas.atualizadoEm, new Date());
+
+          if (sets.length === 0) {
+            throw new BadRequestException(
+              'Nenhum campo valido foi informado para atualizar a movimentacao.',
+            );
           }
 
-          valores.push(valor);
-          sets.push(`${this.quote(coluna)} = $${valores.length}`);
-        };
+          valores.push(idEngate);
+          const filtros = [
+            `${this.quote(colunas.idEngate)} = $${valores.length}`,
+          ];
 
-        adicionarSet(colunas.idVeiculo, payload.idVeiculo);
-        adicionarSet(colunas.idMotorista, payload.idMotorista);
-        adicionarSet(colunas.dataInclusao, payload.dataInclusao);
-        adicionarSet(colunas.dataMovi, payload.dataMovi);
-        adicionarSet(colunas.tipoEngate, payload.tipoEngate);
-        adicionarSet(colunas.situacao, payload.situacao);
-        adicionarSet(colunas.usuarioAtualizacao, payload.usuarioAtualizacao);
-        adicionarSet(colunas.placa2, payload.placa2);
-        adicionarSet(colunas.placa3, payload.placa3);
-        adicionarSet(colunas.placa4, payload.placa4);
-        adicionarSet(colunas.atualizadoEm, new Date());
+          if (colunas.idEmpresa) {
+            valores.push(String(idEmpresa));
+            filtros.push(
+              `${this.quote(colunas.idEmpresa)} = $${valores.length}`,
+            );
+          }
 
-        if (sets.length === 0) {
-          throw new BadRequestException(
-            'Nenhum campo valido foi informado para atualizar a movimentacao.',
-          );
-        }
-
-        valores.push(idEngate);
-        const filtros = [
-          `${this.quote(colunas.idEngate)} = $${valores.length}`,
-        ];
-
-        if (colunas.idEmpresa) {
-          valores.push(String(idEmpresa));
-          filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
-        }
-
-        const sql = `
+          const sql = `
           UPDATE app.${this.quoteIdentifier(tabela)}
           SET ${sets.join(', ')}
           WHERE ${filtros.join(' AND ')}
           RETURNING *
         `;
 
-        const rows = (await manager.query(sql, valores)) as RegistroBanco[];
-        const atualizado = rows[0];
+          const rows = await manager.query(sql, valores);
+          const atualizado = rows[0];
 
-        if (!atualizado) {
-          throw new NotFoundException(
-            'Movimentacao nao encontrada para a empresa logada.',
+          if (!atualizado) {
+            throw new NotFoundException(
+              'Movimentacao nao encontrada para a empresa logada.',
+            );
+          }
+
+          await this.sincronizarVeiculo(
+            manager,
+            payload as Partial<EngatePersistencia> & {
+              idVeiculo: number;
+              tipoEngate: string;
+            },
           );
-        }
 
-        return {
-          sucesso: true,
-          mensagem: 'Movimentacao atualizada com sucesso.',
-          movimento: this.mapearRegistro(atualizado, colunas),
-        };
-      });
+          return {
+            sucesso: true,
+            mensagem: 'Movimentacao atualizada com sucesso.',
+            movimento: this.mapearRegistro(atualizado, colunas),
+          };
+        },
+      );
     } catch (error) {
       this.tratarErroPersistencia(error, 'atualizar');
     }
@@ -449,7 +468,7 @@ export class EngateDesengateService {
   }
 
   private async resolverTabela(manager: EntityManager) {
-    const rows = (await manager.query(
+    const rows = await manager.query(
       `
         SELECT table_name
         FROM information_schema.tables
@@ -459,7 +478,7 @@ export class EngateDesengateService {
         LIMIT 1
       `,
       [this.tabelasCandidatas],
-    )) as Array<{ table_name?: unknown }>;
+    );
 
     const tabela =
       typeof rows[0]?.table_name === 'string' ? rows[0].table_name : '';
@@ -476,7 +495,7 @@ export class EngateDesengateService {
     manager: EntityManager,
     tabela: string,
   ): Promise<MapaColunasEngate> {
-    const rows = (await manager.query(
+    const rows = await manager.query(
       `
         SELECT column_name
         FROM information_schema.columns
@@ -484,7 +503,7 @@ export class EngateDesengateService {
           AND table_name = $1
       `,
       [tabela],
-    )) as Array<{ column_name?: unknown }>;
+    );
 
     const set = new Set<string>(
       rows
@@ -505,7 +524,6 @@ export class EngateDesengateService {
       idMotorista: this.encontrarColuna(set, ['id_motorista'])!,
       dataInclusao: this.encontrarColuna(set, ['data_inclusao'])!,
       dataMovi: this.encontrarColuna(set, ['data_movi'])!,
-      situacao: this.encontrarColuna(set, ['situacao', 'status'], false),
       tipoEngate: this.encontrarColuna(set, ['tipo_engate'])!,
       usuarioAtualizacao: this.encontrarColuna(
         set,
@@ -578,7 +596,7 @@ export class EngateDesengateService {
       LIMIT 1
     `;
 
-    const rows = (await manager.query(sql, valores)) as RegistroBanco[];
+    const rows = await manager.query(sql, valores);
     const registro = rows[0];
 
     if (!registro) {
@@ -597,7 +615,6 @@ export class EngateDesengateService {
     if (ordenarPor === 'id_engate') return colunas.idEngate;
     if (ordenarPor === 'data_inclusao') return colunas.dataInclusao;
     if (ordenarPor === 'tipo_engate') return colunas.tipoEngate;
-    if (ordenarPor === 'situacao' && colunas.situacao) return colunas.situacao;
     if (ordenarPor === 'criado_em' && colunas.criadoEm) return colunas.criadoEm;
     if (ordenarPor === 'atualizado_em' && colunas.atualizadoEm) {
       return colunas.atualizadoEm;
@@ -619,23 +636,19 @@ export class EngateDesengateService {
       dataInclusao:
         this.converterData(registro[colunas.dataInclusao]) ?? new Date(0),
       dataMovi: this.converterData(registro[colunas.dataMovi]) ?? new Date(0),
-      situacao: colunas.situacao
-        ? this.converterTexto(registro[colunas.situacao])?.toUpperCase() ?? 'A'
-        : 'A',
       tipoEngate:
-        this.converterTexto(registro[colunas.tipoEngate])?.toUpperCase() ??
-        'E',
+        this.converterTexto(registro[colunas.tipoEngate])?.toUpperCase() ?? 'E',
       usuarioAtualizacao: colunas.usuarioAtualizacao
         ? this.converterTexto(registro[colunas.usuarioAtualizacao])
         : null,
       placa2: colunas.placa2
-        ? this.converterTexto(registro[colunas.placa2])?.toUpperCase() ?? null
+        ? (this.converterTexto(registro[colunas.placa2])?.toUpperCase() ?? null)
         : null,
       placa3: colunas.placa3
-        ? this.converterTexto(registro[colunas.placa3])?.toUpperCase() ?? null
+        ? (this.converterTexto(registro[colunas.placa3])?.toUpperCase() ?? null)
         : null,
       placa4: colunas.placa4
-        ? this.converterTexto(registro[colunas.placa4])?.toUpperCase() ?? null
+        ? (this.converterTexto(registro[colunas.placa4])?.toUpperCase() ?? null)
         : null,
       criadoEm: colunas.criadoEm
         ? this.converterData(registro[colunas.criadoEm])
@@ -655,7 +668,6 @@ export class EngateDesengateService {
       idMotorista: payload.idMotorista ?? atual.idMotorista,
       dataInclusao: payload.dataInclusao ?? atual.dataInclusao,
       dataMovi: payload.dataMovi ?? atual.dataMovi,
-      situacao: payload.situacao ?? atual.situacao,
       tipoEngate: payload.tipoEngate ?? atual.tipoEngate,
       usuarioAtualizacao:
         payload.usuarioAtualizacao ??
@@ -679,32 +691,111 @@ export class EngateDesengateService {
   ) {
     this.validarDuplicidadeInterna(payload);
 
-    if (payload.tipoEngate !== 'E' || payload.situacao === 'I') {
+    if (payload.tipoEngate !== 'E') {
       return;
     }
 
-    const { placaPorVeiculoId, motoristaOcupado, placaOcupada } =
-      await this.carregarEstadoAtualRecursos(
-        manager,
-        tabela,
-        colunas,
-        idEmpresa,
-        ignorarIdEngate,
-      );
+    const {
+      placaPorVeiculoId,
+      motoristaOcupado,
+      placaOcupada,
+      veiculoPorMotorista,
+      motoristaPorVeiculo,
+      placaPrincipalPorId,
+      placasAdicionaisPorVeiculo,
+      veiculoEstadoAtualPorId,
+    } = await this.carregarEstadoAtualRecursos(
+      manager,
+      tabela,
+      colunas,
+      idEmpresa,
+      ignorarIdEngate,
+    );
 
     const placasSelecionadas = [payload.placa2, payload.placa3, payload.placa4]
       .filter((placa): placa is string => Boolean(placa))
       .map((placa) => placa.trim().toUpperCase());
 
-    if (motoristaOcupado.has(payload.idMotorista)) {
+    const motoristaVeiculoRelacionado = veiculoPorMotorista.get(payload.idMotorista);
+    const estadoVeiculoAtual =
+      veiculoEstadoAtualPorId.get(payload.idVeiculo) ?? {
+        idMotoristaAtual: null,
+        placa2: null,
+        placa3: null,
+        placa4: null,
+      };
+
+    if (
+      estadoVeiculoAtual.idMotoristaAtual !== null &&
+      estadoVeiculoAtual.idMotoristaAtual !== payload.idMotorista
+    ) {
+      throw new BadRequestException(
+        'Este veiculo ja possui um motorista engatado. Faça o desengate antes de alterar o motorista.',
+      );
+    }
+
+    if (
+      payload.placa2 != null &&
+      estadoVeiculoAtual.placa2 !== null &&
+      payload.placa2.trim().toUpperCase() !== estadoVeiculoAtual.placa2
+    ) {
+      throw new BadRequestException(
+        'A placa 2 ja esta vinculada a este veiculo. Use apenas campos vazios para engatar novas placas.',
+      );
+    }
+
+    if (
+      payload.placa3 != null &&
+      estadoVeiculoAtual.placa3 !== null &&
+      payload.placa3.trim().toUpperCase() !== estadoVeiculoAtual.placa3
+    ) {
+      throw new BadRequestException(
+        'A placa 3 ja esta vinculada a este veiculo. Use apenas campos vazios para engatar novas placas.',
+      );
+    }
+
+    if (
+      payload.placa4 != null &&
+      estadoVeiculoAtual.placa4 !== null &&
+      payload.placa4.trim().toUpperCase() !== estadoVeiculoAtual.placa4
+    ) {
+      throw new BadRequestException(
+        'A placa 4 ja esta vinculada a este veiculo. Use apenas campos vazios para engatar novas placas.',
+      );
+    }
+
+    if (
+      motoristaVeiculoRelacionado !== undefined &&
+      motoristaVeiculoRelacionado !== payload.idVeiculo
+    ) {
       throw new BadRequestException(
         'Este motorista ja esta engatado em outro veiculo. Faca o desengate antes de reutiliza-lo.',
       );
     }
 
+    if (
+      motoristaOcupado.has(payload.idMotorista) &&
+      motoristaVeiculoRelacionado !== payload.idVeiculo
+    ) {
+      throw new BadRequestException(
+        'Este motorista ja esta engatado em outro veiculo. Faca o desengate antes de reutiliza-lo.',
+      );
+    }
+
+    const placaPrincipalAtual = placaPrincipalPorId.get(payload.idVeiculo);
+    const placasAdicionaisAtual = placasAdicionaisPorVeiculo.get(payload.idVeiculo) ?? new Set();
+
     for (const placa of placasSelecionadas) {
-      const veiculoRelacionado = placaPorVeiculoId.get(placa) ?? null;
-      if (placaOcupada.has(placa) || (veiculoRelacionado !== null && placaOcupada.has(`ID:${veiculoRelacionado}`))) {
+      const veiculoRelacionado = placaPorVeiculoId.get(placa);
+      const mesmaPlacaNoMesmoVeiculo =
+        placa === placaPrincipalAtual || placasAdicionaisAtual.has(placa);
+      const placaEstaEngatada = placaOcupada.has(placa);
+
+      if (
+        veiculoRelacionado !== undefined &&
+        veiculoRelacionado !== payload.idVeiculo &&
+        placaEstaEngatada
+      ) {
         throw new BadRequestException(
           `A placa ${placa} ja esta engatada em outro veiculo. Faca o desengate antes de reutiliza-la.`,
         );
@@ -712,7 +803,9 @@ export class EngateDesengateService {
     }
   }
 
-  private validarDuplicidadeInterna(payload: Pick<EngatePersistencia, 'placa2' | 'placa3' | 'placa4'>) {
+  private validarDuplicidadeInterna(
+    payload: Pick<EngatePersistencia, 'placa2' | 'placa3' | 'placa4'>,
+  ) {
     const placas = [payload.placa2, payload.placa3, payload.placa4]
       .filter((placa): placa is string => Boolean(placa))
       .map((placa) => placa.trim().toUpperCase());
@@ -752,91 +845,91 @@ export class EngateDesengateService {
     `;
 
     const sqlVeiculos = `
-      SELECT id_veiculo, placa
+      SELECT id_veiculo, placa, id_motorista_atual, placa2, placa3, placa4
       FROM app.veiculo
       ${colunas.idEmpresa ? 'WHERE id_empresa = $1' : ''}
     `;
 
-    const [rowsHistorico, rowsVeiculos] = await Promise.all([
-      manager.query(sqlHistorico, valores) as Promise<RegistroBanco[]>,
-      manager.query(sqlVeiculos, colunas.idEmpresa ? [String(idEmpresa)] : []) as Promise<
-        Array<{ id_veiculo?: unknown; placa?: unknown }>
-      >,
+    const [, rowsVeiculos] = await Promise.all([
+      manager.query(sqlHistorico, valores),
+      manager.query(sqlVeiculos, colunas.idEmpresa ? [String(idEmpresa)] : []),
     ]);
 
     const placaPrincipalPorId = new Map<number, string>();
     const placaPorVeiculoId = new Map<string, number>();
 
+    const motoristaOcupado = new Set<number>();
+    const placaOcupada = new Set<string>();
+    const placasAdicionaisPorVeiculo = new Map<number, Set<string>>();
+    const veiculoPorMotorista = new Map<number, number>();
+    const motoristaPorVeiculo = new Map<number, number>();
+    const veiculoEstadoAtualPorId = new Map<
+      number,
+      {
+        idMotoristaAtual: number | null;
+        placa2: string | null;
+        placa3: string | null;
+        placa4: string | null;
+      }
+    >();
+
     for (const row of rowsVeiculos) {
       const idVeiculo = this.converterInteiro(row.id_veiculo);
       const placa = this.converterTexto(row.placa)?.toUpperCase() ?? '';
+      const idMotoristaAtual = this.converterInteiro(row.id_motorista_atual);
+      const placa2 = this.converterTexto(row.placa2)?.toUpperCase() ?? '';
+      const placa3 = this.converterTexto(row.placa3)?.toUpperCase() ?? '';
+      const placa4 = this.converterTexto(row.placa4)?.toUpperCase() ?? '';
+
       if (!idVeiculo || !placa) {
         continue;
       }
 
       placaPrincipalPorId.set(idVeiculo, placa);
       placaPorVeiculoId.set(placa, idVeiculo);
+
+      if (idMotoristaAtual) {
+        motoristaOcupado.add(idMotoristaAtual);
+        veiculoPorMotorista.set(idMotoristaAtual, idVeiculo);
+        motoristaPorVeiculo.set(idVeiculo, idMotoristaAtual);
+      }
+
+      const placasAdicionais = new Set<string>();
+      if (placa2) {
+        placaOcupada.add(placa2);
+        placaPorVeiculoId.set(placa2, idVeiculo);
+        placasAdicionais.add(placa2);
+      }
+      if (placa3) {
+        placaOcupada.add(placa3);
+        placaPorVeiculoId.set(placa3, idVeiculo);
+        placasAdicionais.add(placa3);
+      }
+      if (placa4) {
+        placaOcupada.add(placa4);
+        placaPorVeiculoId.set(placa4, idVeiculo);
+        placasAdicionais.add(placa4);
+      }
+
+      placasAdicionaisPorVeiculo.set(idVeiculo, placasAdicionais);
+      veiculoEstadoAtualPorId.set(idVeiculo, {
+        idMotoristaAtual: idMotoristaAtual ?? null,
+        placa2: placa2 || null,
+        placa3: placa3 || null,
+        placa4: placa4 || null,
+      });
     }
 
-    const motoristaOcupado = new Set<number>();
-    const placaOcupada = new Set<string>();
-    const ultimoMovimentoPorVeiculo = new Map<number, RegistroBanco>();
-    const ultimoMovimentoPorMotorista = new Map<number, RegistroBanco>();
-
-    for (const row of rowsHistorico) {
-      const idMotorista = this.converterInteiro(row[colunas.idMotorista]);
-      const idVeiculo = this.converterInteiro(row[colunas.idVeiculo]);
-
-      if (idVeiculo && !ultimoMovimentoPorVeiculo.has(idVeiculo)) {
-        ultimoMovimentoPorVeiculo.set(idVeiculo, row);
-      }
-
-      if (idMotorista && !ultimoMovimentoPorMotorista.has(idMotorista)) {
-        ultimoMovimentoPorMotorista.set(idMotorista, row);
-      }
-    }
-
-    for (const row of ultimoMovimentoPorMotorista.values()) {
-      const idMotorista = this.converterInteiro(row[colunas.idMotorista]);
-      const tipoEngate =
-        this.converterTexto(row[colunas.tipoEngate])?.toUpperCase() ?? 'E';
-      const situacao = colunas.situacao
-        ? this.converterTexto(row[colunas.situacao])?.toUpperCase() ?? 'A'
-        : 'A';
-
-      if (idMotorista && tipoEngate === 'E' && situacao !== 'I') {
-        motoristaOcupado.add(idMotorista);
-      }
-    }
-
-    for (const row of ultimoMovimentoPorVeiculo.values()) {
-      const tipoEngate =
-        this.converterTexto(row[colunas.tipoEngate])?.toUpperCase() ?? 'E';
-      const situacao = colunas.situacao
-        ? this.converterTexto(row[colunas.situacao])?.toUpperCase() ?? 'A'
-        : 'A';
-
-      if (tipoEngate !== 'E' || situacao === 'I') {
-        continue;
-      }
-
-      const idVeiculo = this.converterInteiro(row[colunas.idVeiculo]);
-      const recursosPlaca = [
-        colunas.placa2 ? this.converterTexto(row[colunas.placa2])?.toUpperCase() ?? '' : '',
-        colunas.placa3 ? this.converterTexto(row[colunas.placa3])?.toUpperCase() ?? '' : '',
-        colunas.placa4 ? this.converterTexto(row[colunas.placa4])?.toUpperCase() ?? '' : '',
-      ].filter(Boolean);
-
-      for (const placa of recursosPlaca) {
-        placaOcupada.add(placa);
-      }
-
-      if (idVeiculo) {
-        placaOcupada.add(`ID:${idVeiculo}`);
-      }
-    }
-
-    return { placaPorVeiculoId, motoristaOcupado, placaOcupada };
+    return {
+      placaPorVeiculoId,
+      motoristaOcupado,
+      placaOcupada,
+      veiculoPorMotorista,
+      motoristaPorVeiculo,
+      placaPrincipalPorId,
+      placasAdicionaisPorVeiculo,
+      veiculoEstadoAtualPorId,
+    };
   }
 
   private normalizarCriacao(
@@ -848,7 +941,6 @@ export class EngateDesengateService {
       idMotorista: dados.idMotorista,
       dataInclusao: new Date(dados.dataInclusao),
       dataMovi: new Date(dados.dataMovi),
-      situacao: (dados.situacao ?? 'A').trim().toUpperCase(),
       tipoEngate: dados.tipoEngate.trim().toUpperCase(),
       usuarioAtualizacao: this.normalizarUsuario(
         dados.usuarioAtualizacao ?? usuarioJwt.email ?? 'APP_WEB',
@@ -856,6 +948,10 @@ export class EngateDesengateService {
       placa2: this.normalizarTextoOpcional(dados.placa2),
       placa3: this.normalizarTextoOpcional(dados.placa3),
       placa4: this.normalizarTextoOpcional(dados.placa4),
+      desengatarMotorista: dados.desengatarMotorista ?? false,
+      desengatarPlaca2: dados.desengatarPlaca2 ?? false,
+      desengatarPlaca3: dados.desengatarPlaca3 ?? false,
+      desengatarPlaca4: dados.desengatarPlaca4 ?? false,
     };
   }
 
@@ -866,9 +962,10 @@ export class EngateDesengateService {
     return {
       idVeiculo: dados.idVeiculo,
       idMotorista: dados.idMotorista,
-      dataInclusao: dados.dataInclusao ? new Date(dados.dataInclusao) : undefined,
+      dataInclusao: dados.dataInclusao
+        ? new Date(dados.dataInclusao)
+        : undefined,
       dataMovi: dados.dataMovi ? new Date(dados.dataMovi) : undefined,
-      situacao: dados.situacao?.trim().toUpperCase(),
       tipoEngate: dados.tipoEngate?.trim().toUpperCase(),
       usuarioAtualizacao:
         dados.usuarioAtualizacao !== undefined
@@ -886,6 +983,10 @@ export class EngateDesengateService {
         dados.placa4 !== undefined
           ? this.normalizarTextoOpcional(dados.placa4)
           : undefined,
+      desengatarMotorista: dados.desengatarMotorista,
+      desengatarPlaca2: dados.desengatarPlaca2,
+      desengatarPlaca3: dados.desengatarPlaca3,
+      desengatarPlaca4: dados.desengatarPlaca4,
     };
   }
 
@@ -933,6 +1034,95 @@ export class EngateDesengateService {
 
   private quoteIdentifier(valor: string) {
     return valor.replace(/"/g, '""');
+  }
+
+  private async sincronizarVeiculo(
+    manager: EntityManager,
+    payload: Partial<EngatePersistencia> & { idVeiculo: number; tipoEngate: string },
+  ) {
+    try {
+      if (payload.tipoEngate === 'E') {
+        const row =
+        (await manager.query(
+          'SELECT id_motorista_atual, placa2, placa3, placa4 FROM app.veiculo WHERE id_veiculo = $1',
+          [payload.idVeiculo],
+        ))[0] || {};
+
+      const idMotoristaAtual =
+        payload.idMotorista !== undefined && payload.idMotorista !== null
+          ? payload.idMotorista
+          : row.id_motorista_atual;
+      const placa2Atual =
+        payload.placa2 !== undefined
+          ? payload.placa2
+          : row.placa2;
+      const placa3Atual =
+        payload.placa3 !== undefined
+          ? payload.placa3
+          : row.placa3;
+      const placa4Atual =
+        payload.placa4 !== undefined
+          ? payload.placa4
+          : row.placa4;
+
+      const sql = `
+          UPDATE app.veiculo
+          SET id_motorista_atual = $1,
+              placa2 = $2,
+              placa3 = $3,
+              placa4 = $4
+          WHERE id_veiculo = $5
+        `;
+      await manager.query(sql, [
+        idMotoristaAtual || null,
+        placa2Atual || null,
+        placa3Atual || null,
+        placa4Atual || null,
+        payload.idVeiculo,
+      ]);
+      } else if (payload.tipoEngate === 'D') {
+        const updates: string[] = [];
+        const valores: Array<string | number | null> = [];
+
+        if (payload.desengatarMotorista) {
+          updates.push('id_motorista_atual = $' + (valores.length + 1));
+          valores.push(null);
+        }
+
+        if (payload.desengatarPlaca2) {
+          updates.push('placa2 = $' + (valores.length + 1));
+          valores.push(null);
+        }
+
+        if (payload.desengatarPlaca3) {
+          updates.push('placa3 = $' + (valores.length + 1));
+          valores.push(null);
+        }
+
+        if (payload.desengatarPlaca4) {
+          updates.push('placa4 = $' + (valores.length + 1));
+          valores.push(null);
+        }
+
+        if (updates.length === 0) {
+          return;
+        }
+
+        valores.push(payload.idVeiculo);
+
+        const sql = `
+          UPDATE app.veiculo
+          SET ${updates.join(', ')}
+          WHERE id_veiculo = $${valores.length}
+        `;
+
+        await manager.query(sql, valores);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Erro ao sincronizar veiculo id=${payload.idVeiculo} tipo=${payload.tipoEngate}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+      );
+    }
   }
 
   private tratarErroPersistencia(
