@@ -17,6 +17,7 @@ type MapaColunasDespesa = {
   idDespesa: string;
   idEmpresa: string | null;
   idVeiculo: string;
+  idMotorista: string | null;
   idViagem: string | null;
   data: string;
   tipo: string;
@@ -31,7 +32,8 @@ type MapaColunasDespesa = {
 type DespesaNormalizada = {
   idDespesa: number;
   idEmpresa: number | null;
-  idVeiculo: number;
+  idVeiculo: number | null;
+  idMotorista: number | null;
   idViagem: number | null;
   data: Date;
   tipo: string;
@@ -45,14 +47,19 @@ type DespesaNormalizada = {
 };
 
 type DespesaPersistencia = {
-  idVeiculo: number;
+  idVeiculo: number | null;
+  idMotorista: number | null;
   idViagem: number | null;
   data: Date;
   tipo: string;
   descricao: string | null;
   valor: number;
-  kmRegistro: number | null;
   usuarioAtualizacao: string;
+};
+
+type ViagemVinculoResumo = {
+  idVeiculo: number;
+  idMotorista: number | null;
 };
 
 type TipoDespesaMeta = {
@@ -130,6 +137,11 @@ export class DespesasService {
       if (filtro.idVeiculo !== undefined) {
         valores.push(filtro.idVeiculo);
         filtros.push(`${this.quote(colunas.idVeiculo)} = $${valores.length}`);
+      }
+
+      if (filtro.idMotorista !== undefined && colunas.idMotorista) {
+        valores.push(filtro.idMotorista);
+        filtros.push(`${this.quote(colunas.idMotorista)} = $${valores.length}`);
       }
 
       if (filtro.idViagem !== undefined && colunas.idViagem) {
@@ -260,11 +272,17 @@ export class DespesasService {
     dados: CriarDespesaDto,
     usuarioJwt: JwtUsuarioPayload,
   ) {
-    const payload = this.normalizarCriacao(dados, usuarioJwt);
-    this.validarConsistencia(payload);
-
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
+        const payloadBase = this.normalizarCriacao(dados, usuarioJwt);
+        const payload = await this.resolverVinculosDespesa(
+          manager,
+          colunas,
+          idEmpresa,
+          payloadBase,
+        );
+        this.validarConsistencia(payload);
+
         const campos = [colunas.idVeiculo, colunas.data, colunas.tipo, colunas.valor];
         const valores: Array<string | number | Date | null> = [
           payload.idVeiculo,
@@ -272,6 +290,11 @@ export class DespesasService {
           payload.tipo,
           payload.valor,
         ];
+
+        if (colunas.idMotorista) {
+          campos.push(colunas.idMotorista);
+          valores.push(payload.idMotorista);
+        }
 
         if (colunas.idViagem) {
           campos.push(colunas.idViagem);
@@ -281,11 +304,6 @@ export class DespesasService {
         if (colunas.descricao) {
           campos.push(colunas.descricao);
           valores.push(payload.descricao);
-        }
-
-        if (colunas.kmRegistro) {
-          campos.push(colunas.kmRegistro);
-          valores.push(payload.kmRegistro);
         }
 
         if (colunas.usuarioAtualizacao) {
@@ -334,10 +352,9 @@ export class DespesasService {
     dados: AtualizarDespesaDto,
     usuarioJwt: JwtUsuarioPayload,
   ) {
-    const payload = this.normalizarAtualizacao(dados, usuarioJwt);
-
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
+        const payload = this.normalizarAtualizacao(dados, usuarioJwt);
         const registroAtual = await this.buscarRegistroPorIdOuFalhar(
           manager,
           colunas,
@@ -346,29 +363,50 @@ export class DespesasService {
         );
         const atual = this.mapearRegistro(registroAtual, colunas);
 
-        const idVeiculo = payload.idVeiculo ?? atual.idVeiculo;
-        const idViagem =
-          payload.idViagem !== undefined ? payload.idViagem : atual.idViagem;
+        const payloadResolvido = await this.resolverVinculosDespesa(
+          manager,
+          colunas,
+          idEmpresa,
+          {
+            idVeiculo:
+              payload.idVeiculo !== undefined ? payload.idVeiculo : atual.idVeiculo,
+            idMotorista:
+              payload.idMotorista !== undefined
+                ? payload.idMotorista
+                : atual.idMotorista,
+            idViagem:
+              payload.idViagem !== undefined ? payload.idViagem : atual.idViagem,
+            data: payload.data ?? atual.data,
+            tipo: payload.tipo ?? atual.tipo,
+            descricao:
+              payload.descricao !== undefined
+                ? payload.descricao
+                : atual.descricao,
+            valor: payload.valor ?? atual.valor,
+            usuarioAtualizacao:
+              payload.usuarioAtualizacao ?? this.normalizarUsuario(usuarioJwt.email),
+          },
+        );
+
+        const idVeiculo = payloadResolvido.idVeiculo;
+        const idMotorista = payloadResolvido.idMotorista;
+        const idViagem = payloadResolvido.idViagem;
         const data = payload.data ?? atual.data;
         const tipo = payload.tipo ?? atual.tipo;
         const descricao =
           payload.descricao !== undefined ? payload.descricao : atual.descricao;
         const valor = payload.valor ?? atual.valor;
-        const kmRegistro =
-          payload.kmRegistro !== undefined
-            ? payload.kmRegistro
-            : atual.kmRegistro;
         const usuarioAtualizacao =
           payload.usuarioAtualizacao ?? this.normalizarUsuario(usuarioJwt.email);
 
         this.validarConsistencia({
           idVeiculo,
+          idMotorista,
           idViagem,
           data,
           tipo,
           descricao,
           valor,
-          kmRegistro,
           usuarioAtualizacao,
         });
 
@@ -388,16 +426,16 @@ export class DespesasService {
         adicionarSet(colunas.tipo, tipo);
         adicionarSet(colunas.valor, valor);
 
+        if (colunas.idMotorista) {
+          adicionarSet(colunas.idMotorista, idMotorista);
+        }
+
         if (colunas.idViagem) {
           adicionarSet(colunas.idViagem, idViagem);
         }
 
         if (colunas.descricao) {
           adicionarSet(colunas.descricao, descricao);
-        }
-
-        if (colunas.kmRegistro) {
-          adicionarSet(colunas.kmRegistro, kmRegistro);
         }
 
         if (colunas.usuarioAtualizacao) {
@@ -538,6 +576,12 @@ export class DespesasService {
         ['id_veiculo', 'veiculo_id'],
         'id do veiculo',
       )!,
+      idMotorista: this.encontrarColuna(
+        set,
+        ['id_motorista', 'motorista_id'],
+        'id do motorista',
+        false,
+      ),
       idViagem: this.encontrarColuna(
         set,
         ['id_viagem', 'viagem_id'],
@@ -642,13 +686,13 @@ export class DespesasService {
     usuarioJwt: JwtUsuarioPayload,
   ): DespesaPersistencia {
     return {
-      idVeiculo: dados.idVeiculo,
+      idVeiculo: dados.idVeiculo ?? null,
+      idMotorista: dados.idMotorista ?? null,
       idViagem: dados.idViagem ?? null,
       data: new Date(dados.data),
       tipo: this.normalizarTipoPersistencia(dados.tipo),
       descricao: dados.descricao?.trim() ? dados.descricao.trim().toUpperCase() : null,
       valor: dados.valor,
-      kmRegistro: dados.kmRegistro ?? null,
       usuarioAtualizacao: dados.usuarioAtualizacao?.trim()
         ? this.normalizarUsuario(dados.usuarioAtualizacao)
         : this.normalizarUsuario(usuarioJwt.email),
@@ -659,10 +703,15 @@ export class DespesasService {
     dados: AtualizarDespesaDto,
     usuarioJwt: JwtUsuarioPayload,
   ) {
-    const idViagemNormalizada =
-      dados.idViagem === null ? null : dados.idViagem;
+    const idViagemNormalizada = dados.idViagem === null ? null : dados.idViagem;
+    const idVeiculoNormalizado = dados.idVeiculo === null ? null : dados.idVeiculo;
+    const idMotoristaNormalizado =
+      dados.idMotorista === null ? null : dados.idMotorista;
     return {
-      idVeiculo: dados.idVeiculo,
+      idVeiculo:
+        dados.idVeiculo !== undefined ? idVeiculoNormalizado : undefined,
+      idMotorista:
+        dados.idMotorista !== undefined ? idMotoristaNormalizado : undefined,
       idViagem:
         dados.idViagem !== undefined ? idViagemNormalizada : undefined,
       data: dados.data !== undefined ? new Date(dados.data) : undefined,
@@ -677,12 +726,6 @@ export class DespesasService {
             : null
           : undefined,
       valor: dados.valor,
-      kmRegistro:
-        dados.kmRegistro !== undefined
-          ? dados.kmRegistro === null
-            ? null
-            : dados.kmRegistro
-          : undefined,
       usuarioAtualizacao:
         dados.usuarioAtualizacao !== undefined
           ? this.normalizarUsuario(dados.usuarioAtualizacao)
@@ -691,17 +734,33 @@ export class DespesasService {
   }
 
   private validarConsistencia(payload: {
-    idVeiculo: number;
+    idVeiculo: number | null;
+    idMotorista: number | null;
     idViagem: number | null;
     data: Date;
     tipo: string;
     descricao: string | null;
     valor: number;
-    kmRegistro: number | null;
     usuarioAtualizacao: string;
   }) {
-    if (!Number.isFinite(payload.idVeiculo) || payload.idVeiculo <= 0) {
+    if (
+      payload.idVeiculo !== null &&
+      (!Number.isFinite(payload.idVeiculo) || payload.idVeiculo <= 0)
+    ) {
       throw new BadRequestException('idVeiculo invalido.');
+    }
+
+    if (
+      payload.idMotorista !== null &&
+      (!Number.isFinite(payload.idMotorista) || payload.idMotorista <= 0)
+    ) {
+      throw new BadRequestException('idMotorista invalido.');
+    }
+
+    if (payload.idVeiculo === null && payload.idMotorista === null) {
+      throw new BadRequestException(
+        'Informe pelo menos um vinculo: veiculo, motorista ou viagem.',
+      );
     }
 
     if (
@@ -721,13 +780,6 @@ export class DespesasService {
 
     if (!Number.isFinite(payload.valor) || payload.valor < 0) {
       throw new BadRequestException('valor da despesa invalido.');
-    }
-
-    if (
-      payload.kmRegistro !== null &&
-      (!Number.isFinite(payload.kmRegistro) || payload.kmRegistro < 0)
-    ) {
-      throw new BadRequestException('kmRegistro invalido.');
     }
 
     if (!payload.usuarioAtualizacao || payload.usuarioAtualizacao.length < 2) {
@@ -773,6 +825,7 @@ export class DespesasService {
   ) {
     if (ordenarPor === 'id_despesa') return colunas.idDespesa;
     if (ordenarPor === 'id_veiculo') return colunas.idVeiculo;
+    if (ordenarPor === 'id_motorista' && colunas.idMotorista) return colunas.idMotorista;
     if (ordenarPor === 'id_viagem' && colunas.idViagem) return colunas.idViagem;
     if (ordenarPor === 'tipo') return colunas.tipo;
     if (ordenarPor === 'valor') return colunas.valor;
@@ -796,7 +849,11 @@ export class DespesasService {
         colunas.idEmpresa !== null
           ? this.converterNumero(registro[colunas.idEmpresa])
           : null,
-      idVeiculo: this.converterNumero(registro[colunas.idVeiculo]) ?? 0,
+      idVeiculo: this.converterNumero(registro[colunas.idVeiculo]),
+      idMotorista:
+        colunas.idMotorista !== null
+          ? this.converterNumero(registro[colunas.idMotorista])
+          : null,
       idViagem:
         colunas.idViagem !== null
           ? this.converterNumero(registro[colunas.idViagem])
@@ -892,6 +949,85 @@ export class DespesasService {
       .replace(/[\u0300-\u036f]/g, '')
       .trim()
       .toUpperCase();
+  }
+
+  private async resolverVinculosDespesa(
+    manager: EntityManager,
+    colunas: MapaColunasDespesa,
+    idEmpresa: number,
+    payload: DespesaPersistencia,
+  ): Promise<DespesaPersistencia> {
+    let idVeiculo = payload.idVeiculo;
+    let idMotorista = payload.idMotorista;
+    const idViagem = payload.idViagem;
+    const motoristaInformadoDireto = payload.idMotorista !== null && payload.idViagem === null;
+
+    if (idViagem !== null) {
+      const vinculoViagem = await this.buscarVinculoDaViagem(
+        manager,
+        idEmpresa,
+        idViagem,
+      );
+      idVeiculo = vinculoViagem.idVeiculo;
+      idMotorista = vinculoViagem.idMotorista;
+    }
+
+    if (colunas.idMotorista === null) {
+      if (motoristaInformadoDireto) {
+        throw new BadRequestException(
+          'Este ambiente nao possui campo de motorista em despesas. Use vinculo por veiculo ou viagem.',
+        );
+      }
+      idMotorista = null;
+    }
+
+    return {
+      ...payload,
+      idVeiculo,
+      idMotorista,
+      idViagem,
+    };
+  }
+
+  private async buscarVinculoDaViagem(
+    manager: EntityManager,
+    idEmpresa: number,
+    idViagem: number,
+  ): Promise<ViagemVinculoResumo> {
+    const valores: Array<string | number> = [idViagem];
+    const filtros: string[] = ['id_viagem = $1'];
+
+    valores.push(String(idEmpresa));
+    filtros.push(`id_empresa = $${valores.length}`);
+
+    const sql = `
+      SELECT id_veiculo, id_motorista
+      FROM app.viagens
+      WHERE ${filtros.join(' AND ')}
+      LIMIT 1
+    `;
+
+    const rows = (await manager.query(sql, valores)) as RegistroBanco[];
+    const registro = rows[0];
+    if (!registro) {
+      throw new BadRequestException(
+        `Viagem #${idViagem} nao encontrada para a empresa logada.`,
+      );
+    }
+
+    const idVeiculo = this.converterNumero(registro.id_veiculo);
+    if (!idVeiculo || idVeiculo <= 0) {
+      throw new BadRequestException(
+        `Viagem #${idViagem} sem veiculo valido para vinculo da despesa.`,
+      );
+    }
+
+    const idMotorista = this.converterNumero(registro.id_motorista);
+
+    return {
+      idVeiculo,
+      idMotorista: idMotorista && idMotorista > 0 ? idMotorista : null,
+    };
   }
 
   private async recalcularViagensImpactadas(
@@ -1000,7 +1136,13 @@ export class DespesasService {
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
-          'Veiculo ou viagem informada nao existe para a empresa.',
+          'Veiculo, motorista ou viagem informada nao existe para a empresa.',
+        );
+      }
+
+      if (erroPg.code === '23502') {
+        throw new BadRequestException(
+          'A estrutura atual da tabela exige campos obrigatorios nao preenchidos para esta despesa.',
         );
       }
 

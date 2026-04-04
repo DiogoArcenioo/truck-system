@@ -10,10 +10,17 @@ import {
 } from 'class-validator';
 
 export class CriarDespesaDto {
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  idVeiculo!: number;
+  idVeiculo?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  idMotorista?: number;
 
   @IsOptional()
   @Type(() => Number)
@@ -43,12 +50,6 @@ export class CriarDespesaDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   valor!: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  kmRegistro?: number;
 
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>

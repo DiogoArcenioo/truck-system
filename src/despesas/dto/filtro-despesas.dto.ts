@@ -14,6 +14,7 @@ import {
 const ordenacaoPermitida = [
   'id_despesa',
   'id_veiculo',
+  'id_motorista',
   'id_viagem',
   'data',
   'tipo',
@@ -35,6 +36,12 @@ export class FiltroDespesasDto {
   @IsInt()
   @Min(1)
   idVeiculo?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  idMotorista?: number;
 
   @IsOptional()
   @Type(() => Number)

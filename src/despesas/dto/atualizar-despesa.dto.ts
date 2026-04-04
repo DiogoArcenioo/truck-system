@@ -11,10 +11,40 @@ import {
 
 export class AtualizarDespesaDto {
   @IsOptional()
-  @Type(() => Number)
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === null || value === undefined || value === '') {
+      return value === '' ? undefined : value;
+    }
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const numero = Number(value);
+      return Number.isFinite(numero) ? numero : value;
+    }
+    return value;
+  })
   @IsInt()
   @Min(1)
-  idVeiculo?: number;
+  idVeiculo?: number | null;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === null || value === undefined || value === '') {
+      return value === '' ? undefined : value;
+    }
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const numero = Number(value);
+      return Number.isFinite(numero) ? numero : value;
+    }
+    return value;
+  })
+  @IsInt()
+  @Min(1)
+  idMotorista?: number | null;
 
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => {
