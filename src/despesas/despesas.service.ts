@@ -518,17 +518,17 @@ export class DespesasService {
         filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
       }
 
-      if (!colunas.ativo) {
-        throw new BadRequestException(
-          'A coluna ativo nao esta disponivel em app.despesas. Nao e possivel inativar o registro neste ambiente.',
-        );
-      }
-
-      const sql = `
+      const sql = colunas.ativo
+        ? `
         UPDATE app.despesas
         SET ${this.quote(colunas.ativo)} = false
         WHERE ${filtros.join(' AND ')}
           AND ${this.quote(colunas.ativo)} = true
+        RETURNING *
+      `
+        : `
+        DELETE FROM app.despesas
+        WHERE ${filtros.join(' AND ')}
         RETURNING *
       `;
 
@@ -552,7 +552,9 @@ export class DespesasService {
 
       return {
         sucesso: true,
-        mensagem: 'Despesa inativada com sucesso.',
+        mensagem: colunas.ativo
+          ? 'Despesa inativada com sucesso.'
+          : 'Despesa removida com sucesso.',
         idDespesa,
       };
     });
@@ -575,8 +577,6 @@ export class DespesasService {
   private async carregarMapaColunas(
     manager: EntityManager,
   ): Promise<MapaColunasDespesa> {
-    await this.garantirColunaAtivo(manager);
-
     const rows = (await manager.query(`
       SELECT column_name
       FROM information_schema.columns
@@ -620,7 +620,7 @@ export class DespesasService {
       ),
       ativo: this.encontrarColuna(
         set,
-        ['ativo', 'status_ativo'],
+        ['ativo'],
         'situacao ativa',
         false,
       ),
@@ -661,21 +661,6 @@ export class DespesasService {
         false,
       ),
     };
-  }
-
-  private async garantirColunaAtivo(manager: EntityManager): Promise<void> {
-    try {
-      await manager.query(`
-        ALTER TABLE app.despesas
-        ADD COLUMN IF NOT EXISTS ativo boolean NOT NULL DEFAULT true
-      `);
-    } catch (error) {
-      this.logger.warn(
-        `Nao foi possivel garantir coluna ativo em app.despesas. message=${
-          error instanceof Error ? error.message : 'Erro desconhecido'
-        }`,
-      );
-    }
   }
 
   private encontrarColuna(
