@@ -30,6 +30,7 @@ type ViagemNormalizada = {
   totalAbastecimentos: number | null;
   totalKm: number | null;
   totalLucro: number | null;
+  peso: number | null;
   criadoEm: Date;
   atualizadoEm: Date;
   usuarioAtualizacao: string | null;
@@ -58,23 +59,30 @@ export class ViagensService {
   ) {}
 
   async listarTodas(idEmpresa: number) {
-    return this.executarComRls(idEmpresa, async (viagemRepository) => {
+    return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
       const viagens = await viagemRepository.find({
         where: { idEmpresa: String(idEmpresa) },
         order: { dataInicio: 'DESC', idViagem: 'DESC' },
       });
+      const pesoPorViagem = await this.carregarMapaPesoViagens(
+        manager,
+        idEmpresa,
+        viagens.map((viagem) => viagem.idViagem),
+      );
 
       return {
         sucesso: true,
         total: viagens.length,
-        viagens: viagens.map((viagem) => this.mapearViagem(viagem)),
+        viagens: viagens.map((viagem) =>
+          this.mapearViagem(viagem, pesoPorViagem.get(viagem.idViagem) ?? null),
+        ),
       };
     });
   }
 
   async listarComFiltro(idEmpresa: number, filtro: FiltroViagensDto) {
     this.validarIntervalosDoFiltro(filtro);
-    return this.executarComRls(idEmpresa, async (viagemRepository) => {
+    return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
       const pagina = filtro.pagina ?? 1;
       const limite = filtro.limite ?? 30;
       const offset = (pagina - 1) * limite;
@@ -217,6 +225,11 @@ export class ViagensService {
         .take(limite);
 
       const [viagens, total] = await query.getManyAndCount();
+      const pesoPorViagem = await this.carregarMapaPesoViagens(
+        manager,
+        idEmpresa,
+        viagens.map((viagem) => viagem.idViagem),
+      );
 
       return {
         sucesso: true,
@@ -224,22 +237,25 @@ export class ViagensService {
         limite,
         total,
         paginas: total > 0 ? Math.ceil(total / limite) : 0,
-        viagens: viagens.map((viagem) => this.mapearViagem(viagem)),
+        viagens: viagens.map((viagem) =>
+          this.mapearViagem(viagem, pesoPorViagem.get(viagem.idViagem) ?? null),
+        ),
       };
     });
   }
 
   async buscarPorId(idEmpresa: number, idViagem: number) {
-    return this.executarComRls(idEmpresa, async (viagemRepository) => {
+    return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
       const viagem = await this.buscarViagemPorIdOuFalhar(
         viagemRepository,
         idEmpresa,
         idViagem,
       );
+      const peso = await this.carregarPesoDaViagem(manager, idEmpresa, idViagem);
 
       return {
         sucesso: true,
-        viagem: this.mapearViagem(viagem),
+        viagem: this.mapearViagem(viagem, peso ?? null),
       };
     });
   }
@@ -255,10 +271,11 @@ export class ViagensService {
       dataFim: payload.dataFim,
       kmInicial: payload.kmInicial,
       kmFinal: payload.kmFinal,
+      peso: payload.peso,
     });
 
     try {
-      return this.executarComRls(idEmpresa, async (viagemRepository) => {
+      return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
         const viagem = await viagemRepository.save(
           viagemRepository.create({
             idEmpresa: String(idEmpresa),
@@ -281,11 +298,26 @@ export class ViagensService {
               this.normalizarUsuarioAtualizacao(usuarioJwt.email),
           }),
         );
+        if (payload.peso !== undefined) {
+          await this.atualizarPesoViagem(
+            manager,
+            idEmpresa,
+            viagem.idViagem,
+            payload.peso,
+            payload.usuarioAtualizacao ??
+              this.normalizarUsuarioAtualizacao(usuarioJwt.email),
+          );
+        }
+        const peso = await this.carregarPesoDaViagem(
+          manager,
+          idEmpresa,
+          viagem.idViagem,
+        );
 
         return {
           sucesso: true,
           mensagem: 'Viagem cadastrada com sucesso.',
-          viagem: this.mapearViagem(viagem),
+          viagem: this.mapearViagem(viagem, peso ?? null),
         };
       });
     } catch (error) {
@@ -300,7 +332,7 @@ export class ViagensService {
     usuarioJwt: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (viagemRepository) => {
+      return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
         const viagemAtual = await this.buscarViagemPorIdOuFalhar(
           viagemRepository,
           idEmpresa,
@@ -320,20 +352,37 @@ export class ViagensService {
           dataFim,
           kmInicial,
           kmFinal,
+          peso: payload.peso,
         });
 
+        const { peso: _pesoIgnorado, ...payloadSemPeso } = payload;
         await viagemRepository.update(
           { idViagem, idEmpresa: String(idEmpresa) },
           {
-            ...payload,
+            ...payloadSemPeso,
             usuarioAtualizacao:
               payload.usuarioAtualizacao ??
               this.normalizarUsuarioAtualizacao(usuarioJwt.email),
           },
         );
+        if (payload.peso !== undefined) {
+          await this.atualizarPesoViagem(
+            manager,
+            idEmpresa,
+            idViagem,
+            payload.peso,
+            payload.usuarioAtualizacao ??
+              this.normalizarUsuarioAtualizacao(usuarioJwt.email),
+          );
+        }
 
         const viagemAtualizada = await this.buscarViagemPorIdOuFalhar(
           viagemRepository,
+          idEmpresa,
+          idViagem,
+        );
+        const pesoAtualizado = await this.carregarPesoDaViagem(
+          manager,
           idEmpresa,
           idViagem,
         );
@@ -341,7 +390,7 @@ export class ViagensService {
         return {
           sucesso: true,
           mensagem: 'Viagem atualizada com sucesso.',
-          viagem: this.mapearViagem(viagemAtualizada),
+          viagem: this.mapearViagem(viagemAtualizada, pesoAtualizado ?? null),
         };
       });
     } catch (error) {
@@ -423,6 +472,7 @@ export class ViagensService {
       totalAbastecimentos: dados.totalAbastecimentos ?? 0,
       totalKm: dados.totalKm ?? 0,
       totalLucro: dados.totalLucro ?? 0,
+      peso: dados.peso,
       usuarioAtualizacao: dados.usuarioAtualizacao?.trim()
         ? this.normalizarUsuarioAtualizacao(dados.usuarioAtualizacao)
         : null,
@@ -453,6 +503,7 @@ export class ViagensService {
       totalAbastecimentos: dados.totalAbastecimentos,
       totalKm: dados.totalKm,
       totalLucro: dados.totalLucro,
+      peso: dados.peso,
       usuarioAtualizacao:
         dados.usuarioAtualizacao !== undefined
           ? this.normalizarUsuarioAtualizacao(dados.usuarioAtualizacao)
@@ -537,6 +588,7 @@ export class ViagensService {
     dataFim: Date | null;
     kmInicial: number;
     kmFinal: number | null;
+    peso?: number;
   }) {
     if (Number.isNaN(params.dataInicio.getTime())) {
       throw new BadRequestException('dataInicio invalida.');
@@ -556,6 +608,10 @@ export class ViagensService {
       throw new BadRequestException(
         'kmFinal nao pode ser menor que kmInicial.',
       );
+    }
+
+    if (params.peso !== undefined && (!Number.isFinite(params.peso) || params.peso < 0)) {
+      throw new BadRequestException('peso invalido.');
     }
   }
 
@@ -621,7 +677,112 @@ export class ViagensService {
     return valor.trim().toUpperCase();
   }
 
-  private mapearViagem(viagem: ViagemEntity): ViagemNormalizada {
+  private async colunaPesoExiste(manager: EntityManager): Promise<boolean> {
+    const rows = (await manager.query(
+      `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'app'
+        AND table_name = 'viagens'
+        AND column_name = 'peso'
+      LIMIT 1
+      `,
+    )) as Array<Record<string, unknown>>;
+    return rows.length > 0;
+  }
+
+  private async carregarMapaPesoViagens(
+    manager: EntityManager,
+    idEmpresa: number,
+    idsViagem: number[],
+  ): Promise<Map<number, number | null>> {
+    const mapa = new Map<number, number | null>();
+    if (idsViagem.length === 0) {
+      return mapa;
+    }
+
+    const colunaExiste = await this.colunaPesoExiste(manager);
+    if (!colunaExiste) {
+      return mapa;
+    }
+
+    const rows = (await manager.query(
+      `
+      SELECT id_viagem, peso
+      FROM app.viagens
+      WHERE id_empresa = $1
+        AND id_viagem = ANY($2::int[])
+      `,
+      [String(idEmpresa), idsViagem],
+    )) as Array<{ id_viagem?: unknown; peso?: unknown }>;
+
+    rows.forEach((row) => {
+      const idViagem = Number(row.id_viagem);
+      if (!Number.isFinite(idViagem)) {
+        return;
+      }
+      mapa.set(idViagem, this.converterNumero(row.peso as string | number | null));
+    });
+
+    return mapa;
+  }
+
+  private async carregarPesoDaViagem(
+    manager: EntityManager,
+    idEmpresa: number,
+    idViagem: number,
+  ): Promise<number | null> {
+    const colunaExiste = await this.colunaPesoExiste(manager);
+    if (!colunaExiste) {
+      return null;
+    }
+
+    const rows = (await manager.query(
+      `
+      SELECT peso
+      FROM app.viagens
+      WHERE id_empresa = $1
+        AND id_viagem = $2
+      LIMIT 1
+      `,
+      [String(idEmpresa), idViagem],
+    )) as Array<{ peso?: unknown }>;
+
+    return this.converterNumero((rows[0]?.peso as string | number | null) ?? null);
+  }
+
+  private async atualizarPesoViagem(
+    manager: EntityManager,
+    idEmpresa: number,
+    idViagem: number,
+    peso: number,
+    usuarioAtualizacao: string,
+  ): Promise<void> {
+    const colunaExiste = await this.colunaPesoExiste(manager);
+    if (!colunaExiste) {
+      throw new BadRequestException(
+        'Campo peso ainda nao esta disponivel na tabela app.viagens. Execute o script sql/viagens_add_peso.sql.',
+      );
+    }
+
+    await manager.query(
+      `
+      UPDATE app.viagens
+      SET
+        peso = $1,
+        atualizado_em = NOW(),
+        usuario_atualizacao = $2
+      WHERE id_empresa = $3
+        AND id_viagem = $4
+      `,
+      [peso, usuarioAtualizacao, String(idEmpresa), idViagem],
+    );
+  }
+
+  private mapearViagem(
+    viagem: ViagemEntity,
+    pesoExtra?: number | null,
+  ): ViagemNormalizada {
     return {
       idViagem: viagem.idViagem,
       idEmpresa: Number(viagem.idEmpresa),
@@ -639,6 +800,7 @@ export class ViagensService {
       totalAbastecimentos: this.converterNumero(viagem.totalAbastecimentos),
       totalKm: viagem.totalKm,
       totalLucro: this.converterNumero(viagem.totalLucro),
+      peso: pesoExtra ?? null,
       criadoEm: viagem.criadoEm,
       atualizadoEm: viagem.atualizadoEm,
       usuarioAtualizacao: viagem.usuarioAtualizacao,
