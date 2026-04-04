@@ -22,6 +22,22 @@ export class AtualizarProdutoDto {
   descricaoProduto?: string;
 
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @MaxLength(100)
+  referencia?: string;
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @MaxLength(100)
+  codigoOriginal?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

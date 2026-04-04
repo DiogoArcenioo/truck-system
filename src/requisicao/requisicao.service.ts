@@ -193,6 +193,8 @@ export class RequisicaoService {
           payload.itens,
         );
 
+        await this.atualizarValorTotalOrdemServico(manager, idEmpresa, payload.idOs);
+
         const requisicao = await this.buscarPorIdInterno(
           manager,
           idEmpresa,
@@ -224,8 +226,19 @@ export class RequisicaoService {
           idRequisicao,
         );
         const payload = this.normalizarAtualizacao(dados, usuarioJwt);
+        const idOsAnterior = this.converterNumero(atual.id_os) ?? 0;
 
-        const idOs = payload.idOs ?? this.converterNumero(atual.id_os) ?? 0;
+        if (
+          payload.idOs !== undefined &&
+          idOsAnterior > 0 &&
+          payload.idOs !== idOsAnterior
+        ) {
+          throw new BadRequestException(
+            'Uma requisicao ja vinculada a uma ordem de servico nao pode ser desvinculada ou movida para outra OS.',
+          );
+        }
+
+        const idOs = payload.idOs ?? idOsAnterior ?? 0;
         if (idOs <= 0) {
           throw new BadRequestException('idOs invalido para requisicao.');
         }
@@ -276,6 +289,14 @@ export class RequisicaoService {
           );
         }
 
+        if (idOsAnterior > 0) {
+          await this.atualizarValorTotalOrdemServico(manager, idEmpresa, idOsAnterior);
+        }
+
+        if (idOs > 0 && idOs !== idOsAnterior) {
+          await this.atualizarValorTotalOrdemServico(manager, idEmpresa, idOs);
+        }
+
         const requisicao = await this.buscarPorIdInterno(
           manager,
           idEmpresa,
@@ -290,6 +311,59 @@ export class RequisicaoService {
       });
     } catch (error) {
       this.tratarErroPersistencia(error, 'atualizar');
+    }
+  }
+
+  async excluir(idEmpresa: number, idRequisicao: number) {
+    try {
+      return await this.executarComRls(idEmpresa, async (manager) => {
+        const atual = await this.buscarRegistroPorIdOuFalhar(
+          manager,
+          idEmpresa,
+          idRequisicao,
+        );
+        const situacaoAtual =
+          this.converterTexto(atual.situacao)?.toUpperCase() ?? 'A';
+
+        if (situacaoAtual !== 'A') {
+          throw new BadRequestException(
+            'Somente requisicoes abertas podem ser excluidas.',
+          );
+        }
+
+        const idOs = this.converterNumero(atual.id_os) ?? 0;
+        const quantidadeItens = await this.contarItensRequisicao(
+          manager,
+          idEmpresa,
+          idRequisicao,
+        );
+
+        if (quantidadeItens > 0) {
+          throw new BadRequestException(
+            'Esta requisicao possui produto(s) vinculado(s). Remova os itens antes de excluir.',
+          );
+        }
+
+        await manager.query(
+          `
+            DELETE FROM app.requisicao
+            WHERE id_empresa = $1
+              AND id_requisicao = $2
+          `,
+          [String(idEmpresa), idRequisicao],
+        );
+
+        if (idOs > 0) {
+          await this.atualizarValorTotalOrdemServico(manager, idEmpresa, idOs);
+        }
+
+        return {
+          sucesso: true,
+          mensagem: 'Requisicao excluida com sucesso.',
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error, 'excluir');
     }
   }
 
@@ -316,6 +390,24 @@ export class RequisicaoService {
         item,
       );
     }
+  }
+
+  private async contarItensRequisicao(
+    manager: EntityManager,
+    idEmpresa: number,
+    idRequisicao: number,
+  ): Promise<number> {
+    const rows = (await manager.query(
+      `
+        SELECT COUNT(1)::int AS total
+        FROM app.requisicao_itens
+        WHERE id_empresa = $1
+          AND id_requisicao = $2
+      `,
+      [String(idEmpresa), idRequisicao],
+    )) as Array<{ total?: number | string }>;
+
+    return this.converterNumero(rows[0]?.total) ?? 0;
   }
 
   private async inserirCabecalhoRequisicao(
@@ -441,6 +533,48 @@ export class RequisicaoService {
     }
 
     return row;
+  }
+
+  private async atualizarValorTotalOrdemServico(
+    manager: EntityManager,
+    idEmpresa: number,
+    idOs: number,
+  ) {
+    if (!Number.isFinite(idOs) || idOs <= 0) {
+      return;
+    }
+
+    const rows = (await manager.query(
+      `
+        SELECT COALESCE(SUM(total_por_requisicao.valor_total), 0)::numeric AS valor_total
+        FROM (
+          SELECT
+            req.id_requisicao,
+            COALESCE(SUM(COALESCE(itens.qtd_produto, 0) * COALESCE(itens.valor_un, 0)), 0) AS valor_total
+          FROM app.requisicao req
+          LEFT JOIN app.requisicao_itens itens
+            ON itens.id_empresa = req.id_empresa
+           AND itens.id_requisicao = req.id_requisicao
+          WHERE req.id_empresa = $1
+            AND req.id_os = $2
+          GROUP BY req.id_requisicao
+        ) AS total_por_requisicao
+      `,
+      [String(idEmpresa), idOs],
+    )) as Array<{ valor_total?: string | number }>;
+
+    const valorTotal = Number(this.converterNumero(rows[0]?.valor_total) ?? 0);
+
+    await manager.query(
+      `
+        UPDATE app.ordem_servico
+        SET valor_total = $1,
+            atualizado_em = NOW()
+        WHERE id_empresa = $2
+          AND id_os = $3
+      `,
+      [Number(valorTotal.toFixed(2)), String(idEmpresa), idOs],
+    );
   }
 
   private async mapearRequisicoesComItens(

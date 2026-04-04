@@ -18,6 +18,7 @@ import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { QueryFailedError } from 'typeorm';
 import { AtualizarOrdemServicoDto } from './dto/atualizar-ordem-servico.dto';
 import { CriarOrdemServicoDto } from './dto/criar-ordem-servico.dto';
+import { FinalizarOrdemServicoDto } from './dto/finalizar-ordem-servico.dto';
 import { FiltroOrdemServicoDto } from './dto/filtro-ordem-servico.dto';
 import { OrdemServicoService } from './ordem-servico.service';
 
@@ -117,6 +118,37 @@ export class OrdemServicoController {
 
       throw new InternalServerErrorException(
         `Falha inesperada ao atualizar ordem de servico. DEBUG: ${detalhe}`,
+      );
+    }
+  }
+
+  @Post(':idOs/finalizar')
+  async finalizar(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idOs', ParseIntPipe) idOs: number,
+    @Body() dados: FinalizarOrdemServicoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    try {
+      return await this.ordemServicoService.finalizar(
+        usuario.idEmpresa,
+        idOs,
+        dados,
+        usuario,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detalhe = this.descreverErro(error);
+      this.logger.error(
+        `Erro inesperado ao finalizar ordem de servico. empresa=${usuario.idEmpresa}, idOs=${idOs}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new InternalServerErrorException(
+        `Falha inesperada ao finalizar ordem de servico. DEBUG: ${detalhe}`,
       );
     }
   }

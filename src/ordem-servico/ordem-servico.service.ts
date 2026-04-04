@@ -4,6 +4,7 @@ import { JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { configurarContextoEmpresaRls } from '../common/database/rls.util';
 import { AtualizarOrdemServicoDto } from './dto/atualizar-ordem-servico.dto';
 import { CriarOrdemServicoDto } from './dto/criar-ordem-servico.dto';
+import { FinalizarOrdemServicoDto } from './dto/finalizar-ordem-servico.dto';
 import { FiltroOrdemServicoDto } from './dto/filtro-ordem-servico.dto';
 import { ListarOrdemServicoDto } from './dto/listar-ordem-servico.dto';
 import { SITUACAO_OS_OPCOES, TIPO_SERVICO_OPCOES } from './ordem-servico.constants';
@@ -277,10 +278,58 @@ export class OrdemServicoService {
       return await this.executarComRls(idEmpresa, async (manager) => {
         const atual = await this.buscarRegistroPorIdOuFalhar(manager, idEmpresa, idOs);
         const payload = this.normalizarAtualizacao(dados, usuarioJwt);
+        const idVeiculoAtual = this.converterNumero(atual.id_veiculo) ?? 0;
+        const idFornecedorAtual = this.converterNumero(atual.id_fornecedor) ?? null;
+        const dataCadastroAtual =
+          this.converterDataIso(atual.data_cadastro) ?? new Date().toISOString();
+        const situacaoAtual =
+          this.converterTexto(atual.situacao_os)?.toUpperCase() ?? 'A';
+
+        if (
+          payload.idVeiculo !== undefined &&
+          payload.idVeiculo !== idVeiculoAtual
+        ) {
+          throw new BadRequestException(
+            'A placa/veiculo da OS nao pode ser alterada depois do cadastro.',
+          );
+        }
+
+        if (
+          payload.idFornecedor !== undefined &&
+          payload.idFornecedor !== idFornecedorAtual
+        ) {
+          throw new BadRequestException(
+            'O fornecedor da OS nao pode ser alterado depois do cadastro.',
+          );
+        }
+
+        if (
+          payload.dataCadastro !== undefined &&
+          payload.dataCadastro !== dataCadastroAtual
+        ) {
+          throw new BadRequestException(
+            'A data de abertura da OS nao pode ser alterada depois do cadastro.',
+          );
+        }
+
+        if (
+          payload.situacaoOs !== undefined &&
+          payload.situacaoOs !== situacaoAtual
+        ) {
+          throw new BadRequestException(
+            'A situacao da OS nao pode ser alterada manualmente.',
+          );
+        }
+
+        if (payload.valorTotal !== undefined) {
+          throw new BadRequestException(
+            'O valor da OS e calculado automaticamente pelas requisicoes vinculadas.',
+          );
+        }
 
         const dataCadastro =
           payload.dataCadastro ??
-          this.converterDataIso(atual.data_cadastro) ??
+          dataCadastroAtual ??
           new Date().toISOString();
         const dataFechamento =
           payload.dataFechamento !== undefined
@@ -359,6 +408,92 @@ export class OrdemServicoService {
       });
     } catch (error) {
       this.tratarErroPersistencia(error, 'atualizar');
+    }
+  }
+
+  async finalizar(
+    idEmpresa: number,
+    idOs: number,
+    dados: FinalizarOrdemServicoDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (manager) => {
+        const atual = await this.buscarRegistroPorIdOuFalhar(manager, idEmpresa, idOs);
+        const situacaoAtual =
+          this.converterTexto(atual.situacao_os)?.toUpperCase() ?? 'A';
+
+        if (situacaoAtual === 'C') {
+          throw new BadRequestException(
+            'Nao e possivel finalizar uma ordem de servico cancelada.',
+          );
+        }
+
+        const usuarioAtualizacao = this.normalizarTexto(
+          dados.usuarioAtualizacao ?? usuarioJwt.email,
+          'usuarioAtualizacao',
+        );
+        const dataCadastro =
+          this.converterDataIso(atual.data_cadastro) ?? new Date().toISOString();
+        const dataFechamento = this.normalizarDataHora(
+          dados.dataFechamento ?? new Date().toISOString(),
+          'dataFechamento',
+        );
+        const tempoOsMin = this.calcularTempoMinutos(dataCadastro, dataFechamento);
+
+        if (tempoOsMin === null) {
+          throw new BadRequestException(
+            'Nao foi possivel calcular o tempo da OS com a data de fechamento informada.',
+          );
+        }
+
+        const rows = (await manager.query(
+          `
+            UPDATE app.ordem_servico
+            SET
+              data_fechamento = $1,
+              tempo_os_min = $2,
+              situacao_os = 'F',
+              usuario_atualizacao = $3,
+              data_atualizacao = NOW(),
+              atualizado_em = NOW()
+            WHERE id_empresa = $4
+              AND id_os = $5
+            RETURNING *
+          `,
+          [dataFechamento, tempoOsMin, usuarioAtualizacao, String(idEmpresa), idOs],
+        )) as RegistroBanco[];
+
+        if (!rows[0]) {
+          throw new NotFoundException(
+            'Ordem de servico nao encontrada para a empresa logada.',
+          );
+        }
+
+        await manager.query(
+          `
+            UPDATE app.requisicao
+            SET
+              situacao = 'F',
+              usuario_atualizacao = $1,
+              atualizado_em = NOW()
+            WHERE id_empresa = $2
+              AND id_os = $3
+              AND situacao <> 'C'
+          `,
+          [usuarioAtualizacao, String(idEmpresa), idOs],
+        );
+
+        const ordemServico = await this.buscarPorIdInterno(manager, idEmpresa, idOs);
+
+        return {
+          sucesso: true,
+          mensagem: 'Ordem de servico finalizada com sucesso.',
+          ordemServico,
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error, 'finalizar');
     }
   }
 
@@ -466,9 +601,9 @@ export class OrdemServicoService {
       dataFechamento,
       tempoOsMin:
         dados.tempoOsMin ?? this.calcularTempoMinutos(dataCadastro, dataFechamento),
-      situacaoOs: dados.situacaoOs ?? 'A',
+      situacaoOs: 'A',
       observacao: this.normalizarTextoOpcional(dados.observacao),
-      valorTotal: this.normalizarValor(dados.valorTotal ?? 0, 'valorTotal'),
+      valorTotal: 0,
       kmVeiculo: dados.kmVeiculo ?? null,
       chaveNfe: this.normalizarTextoOpcional(dados.chaveNfe),
       tipoServico: dados.tipoServico ?? 'C',
@@ -587,8 +722,14 @@ export class OrdemServicoService {
     }
 
     const diferencaMs = fim.getTime() - inicio.getTime();
-    if (!Number.isFinite(diferencaMs) || diferencaMs < 0) {
-      return 0;
+    if (!Number.isFinite(diferencaMs)) {
+      return null;
+    }
+
+    if (diferencaMs < 0) {
+      throw new BadRequestException(
+        'A data de fechamento nao pode ser anterior a data de abertura.',
+      );
     }
 
     return Math.round(diferencaMs / 60000);
