@@ -19,6 +19,7 @@ import { MotoristasModule } from './motoristas/motoristas.module';
 import { OrdemServicoModule } from './ordem-servico/ordem-servico.module';
 import { ProdutoModule } from './produto/produto.module';
 import { ProdutoReferenciasModule } from './produto-referencias/produto-referencias.module';
+import { PneusModule } from './pneus/pneus.module';
 import { RequisicaoModule } from './requisicao/requisicao.module';
 import { TiposVeiculoModule } from './tipos-veiculo/tipos-veiculo.module';
 import { VeiculoModule } from './veiculo/veiculo.module';
@@ -76,6 +77,7 @@ import { ViagensModule } from './viagens/viagens.module';
     VeiculoModule,
     MotoristasModule,
     ViagensModule,
+    PneusModule,
     ProdutoModule,
     ProdutoReferenciasModule,
     OrdemServicoModule,
