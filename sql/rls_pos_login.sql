@@ -166,4 +166,36 @@ CREATE POLICY pol_requisicao_itens_empresa
     id_empresa = app.current_empresa_id()
   );
 
+ALTER TABLE app.multas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.multas FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS pol_multas_empresa ON app.multas;
+DROP POLICY IF EXISTS multas_rls_empresa ON app.multas;
+CREATE POLICY pol_multas_empresa
+  ON app.multas
+  FOR ALL
+  TO app_user
+  USING (
+    id_empresa = app.current_empresa_id()
+  )
+  WITH CHECK (
+    id_empresa = app.current_empresa_id()
+  );
+
+ALTER TABLE app.motorista_enderecos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.motorista_enderecos FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS pol_motorista_enderecos_empresa ON app.motorista_enderecos;
+DROP POLICY IF EXISTS motorista_enderecos_rls_empresa ON app.motorista_enderecos;
+CREATE POLICY pol_motorista_enderecos_empresa
+  ON app.motorista_enderecos
+  FOR ALL
+  TO app_user
+  USING (
+    id_empresa = app.current_empresa_id()
+  )
+  WITH CHECK (
+    id_empresa = app.current_empresa_id()
+  );
+
 COMMIT;

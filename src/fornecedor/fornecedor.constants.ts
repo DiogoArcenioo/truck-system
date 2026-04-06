@@ -1,6 +1,6 @@
 export const TIPO_PESSOA_OPCOES = [
-  { label: 'Pessoa juridica', value: 'J' },
-  { label: 'Pessoa fisica', value: 'F' },
+  { label: 'Pessoa jurídica', value: 'J' },
+  { label: 'Pessoa física', value: 'F' },
 ] as const;
 
 export const TIPO_PESSOA_CODIGOS = TIPO_PESSOA_OPCOES.map(

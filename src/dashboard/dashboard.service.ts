@@ -678,40 +678,38 @@ export class DashboardService {
     inicio: Date,
     fimExclusivo: Date,
   ): Promise<DetalheIndicadorResultado> {
-    const [resumoRows, linhasRows] = await Promise.all([
-      manager.query(
-        `
-          SELECT
-            COUNT(1)::int AS total_viagens,
-            COALESCE(SUM(COALESCE(valor_frete, 0)::numeric), 0)::numeric AS valor_total,
-            COALESCE(AVG(COALESCE(valor_frete, 0)::numeric), 0)::numeric AS ticket_medio
-          FROM app.viagens
-          WHERE id_empresa = $1
-            AND data_inicio >= $2::timestamptz
-            AND data_inicio < $3::timestamptz
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-      manager.query(
-        `
-          SELECT
-            id_viagem,
-            id_veiculo,
-            id_motorista,
-            data_inicio,
-            data_fim,
-            status,
-            COALESCE(valor_frete, 0)::numeric AS valor_frete
-          FROM app.viagens
-          WHERE id_empresa = $1
-            AND data_inicio >= $2::timestamptz
-            AND data_inicio < $3::timestamptz
-          ORDER BY data_inicio DESC, id_viagem DESC
-          LIMIT 120
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-    ]);
+    const resumoRows = (await manager.query(
+      `
+        SELECT
+          COUNT(1)::int AS total_viagens,
+          COALESCE(SUM(COALESCE(valor_frete, 0)::numeric), 0)::numeric AS valor_total,
+          COALESCE(AVG(COALESCE(valor_frete, 0)::numeric), 0)::numeric AS ticket_medio
+        FROM app.viagens
+        WHERE id_empresa = $1
+          AND data_inicio >= $2::timestamptz
+          AND data_inicio < $3::timestamptz
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
+    const linhasRows = (await manager.query(
+      `
+        SELECT
+          id_viagem,
+          id_veiculo,
+          id_motorista,
+          data_inicio,
+          data_fim,
+          status,
+          COALESCE(valor_frete, 0)::numeric AS valor_frete
+        FROM app.viagens
+        WHERE id_empresa = $1
+          AND data_inicio >= $2::timestamptz
+          AND data_inicio < $3::timestamptz
+        ORDER BY data_inicio DESC, id_viagem DESC
+        LIMIT 120
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
 
     const resumo = resumoRows[0] ?? {};
     const valorTotal = this.arredondar(this.converterNumero(resumo.valor_total));
@@ -779,41 +777,39 @@ export class DashboardService {
       ? `${this.colunaComAlias('ab', colunas.idEmpresa)} = $1`
       : '$1::text IS NOT NULL';
 
-    const [resumoRows, linhasRows] = await Promise.all([
-      manager.query(
-        `
-          SELECT
-            COUNT(1)::int AS total_registros,
-            COALESCE(SUM(COALESCE(${litrosColuna}::numeric, 0)), 0)::numeric AS litros_total,
-            COALESCE(AVG(NULLIF(COALESCE(${valorLitroColuna}::numeric, 0), 0)), 0)::numeric AS preco_medio,
-            COALESCE(SUM(${custoExpr}), 0)::numeric AS custo_total
-          FROM app.abastecimentos ab
-          WHERE ${filtroEmpresa}
-            AND ${dataColuna} >= $2::timestamptz
-            AND ${dataColuna} < $3::timestamptz
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-      manager.query(
-        `
-          SELECT
-            ${idAbastecimentoColuna} AS id_abastecimento,
-            ${idVeiculoColuna} AS id_veiculo,
-            ${dataColuna} AS data_abastecimento,
-            COALESCE(${litrosColuna}::numeric, 0)::numeric AS litros,
-            COALESCE(${valorLitroColuna}::numeric, 0)::numeric AS valor_litro,
-            COALESCE(${kmColuna}::numeric, 0)::numeric AS km,
-            ${custoExpr}::numeric AS custo_calculado
-          FROM app.abastecimentos ab
-          WHERE ${filtroEmpresa}
-            AND ${dataColuna} >= $2::timestamptz
-            AND ${dataColuna} < $3::timestamptz
-          ORDER BY ${dataColuna} DESC, ${idAbastecimentoColuna} DESC
-          LIMIT 120
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-    ]);
+    const resumoRows = (await manager.query(
+      `
+        SELECT
+          COUNT(1)::int AS total_registros,
+          COALESCE(SUM(COALESCE(${litrosColuna}::numeric, 0)), 0)::numeric AS litros_total,
+          COALESCE(AVG(NULLIF(COALESCE(${valorLitroColuna}::numeric, 0), 0)), 0)::numeric AS preco_medio,
+          COALESCE(SUM(${custoExpr}), 0)::numeric AS custo_total
+        FROM app.abastecimentos ab
+        WHERE ${filtroEmpresa}
+          AND ${dataColuna} >= $2::timestamptz
+          AND ${dataColuna} < $3::timestamptz
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
+    const linhasRows = (await manager.query(
+      `
+        SELECT
+          ${idAbastecimentoColuna} AS id_abastecimento,
+          ${idVeiculoColuna} AS id_veiculo,
+          ${dataColuna} AS data_abastecimento,
+          COALESCE(${litrosColuna}::numeric, 0)::numeric AS litros,
+          COALESCE(${valorLitroColuna}::numeric, 0)::numeric AS valor_litro,
+          COALESCE(${kmColuna}::numeric, 0)::numeric AS km,
+          ${custoExpr}::numeric AS custo_calculado
+        FROM app.abastecimentos ab
+        WHERE ${filtroEmpresa}
+          AND ${dataColuna} >= $2::timestamptz
+          AND ${dataColuna} < $3::timestamptz
+        ORDER BY ${dataColuna} DESC, ${idAbastecimentoColuna} DESC
+        LIMIT 120
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
 
     const resumo = resumoRows[0] ?? {};
     const custoTotal = this.arredondar(this.converterNumero(resumo.custo_total));
@@ -877,51 +873,49 @@ export class DashboardService {
     inicio: Date,
     fimExclusivo: Date,
   ): Promise<DetalheIndicadorResultado> {
-    const [resumoRows, linhasRows] = await Promise.all([
-      manager.query(
-        `
-          SELECT
-            COUNT(1)::int AS total_os,
-            COUNT(1) FILTER (WHERE situacao_os = 'A')::int AS os_abertas,
-            COUNT(1) FILTER (WHERE situacao_os = 'F')::int AS os_fechadas,
-            COUNT(1) FILTER (WHERE situacao_os = 'C')::int AS os_canceladas,
-            COALESCE(
-              SUM(
-                CASE
-                  WHEN situacao_os = 'C' THEN 0
-                  ELSE COALESCE(valor_total, 0)::numeric
-                END
-              ),
-              0
-            )::numeric AS custo_total
-          FROM app.ordem_servico
-          WHERE id_empresa = $1
-            AND data_cadastro >= $2::timestamptz
-            AND data_cadastro < $3::timestamptz
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-      manager.query(
-        `
-          SELECT
-            id_os,
-            id_veiculo,
-            id_fornecedor,
-            data_cadastro,
-            data_fechamento,
-            situacao_os,
-            COALESCE(tipo_servico::text, 'N/D') AS tipo_servico,
-            COALESCE(valor_total, 0)::numeric AS valor_total
-          FROM app.ordem_servico
-          WHERE id_empresa = $1
-            AND data_cadastro >= $2::timestamptz
-            AND data_cadastro < $3::timestamptz
-          ORDER BY data_cadastro DESC, id_os DESC
-          LIMIT 120
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-    ]);
+    const resumoRows = (await manager.query(
+      `
+        SELECT
+          COUNT(1)::int AS total_os,
+          COUNT(1) FILTER (WHERE situacao_os = 'A')::int AS os_abertas,
+          COUNT(1) FILTER (WHERE situacao_os = 'F')::int AS os_fechadas,
+          COUNT(1) FILTER (WHERE situacao_os = 'C')::int AS os_canceladas,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN situacao_os = 'C' THEN 0
+                ELSE COALESCE(valor_total, 0)::numeric
+              END
+            ),
+            0
+          )::numeric AS custo_total
+        FROM app.ordem_servico
+        WHERE id_empresa = $1
+          AND data_cadastro >= $2::timestamptz
+          AND data_cadastro < $3::timestamptz
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
+    const linhasRows = (await manager.query(
+      `
+        SELECT
+          id_os,
+          id_veiculo,
+          id_fornecedor,
+          data_cadastro,
+          data_fechamento,
+          situacao_os,
+          COALESCE(tipo_servico::text, 'N/D') AS tipo_servico,
+          COALESCE(valor_total, 0)::numeric AS valor_total
+        FROM app.ordem_servico
+        WHERE id_empresa = $1
+          AND data_cadastro >= $2::timestamptz
+          AND data_cadastro < $3::timestamptz
+        ORDER BY data_cadastro DESC, id_os DESC
+        LIMIT 120
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
 
     const resumo = resumoRows[0] ?? {};
     const custoTotal = this.arredondar(this.converterNumero(resumo.custo_total));
@@ -1447,41 +1441,39 @@ export class DashboardService {
     inicio: Date,
     fimExclusivo: Date,
   ): Promise<DetalheIndicadorResultado> {
-    const [resumoRows, linhasRows] = await Promise.all([
-      manager.query(
-        `
-          SELECT
-            COUNT(1)::int AS total_viagens,
-            COUNT(1) FILTER (WHERE data_fim IS NOT NULL)::int AS viagens_fechadas,
-            COUNT(1) FILTER (WHERE data_fim IS NULL)::int AS viagens_abertas,
-            COUNT(1) FILTER (WHERE UPPER(COALESCE(status, '')) = 'C')::int AS viagens_canceladas
-          FROM app.viagens
-          WHERE id_empresa = $1
-            AND data_inicio >= $2::timestamptz
-            AND data_inicio < $3::timestamptz
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-      manager.query(
-        `
-          SELECT
-            id_viagem,
-            id_veiculo,
-            id_motorista,
-            data_inicio,
-            data_fim,
-            status,
-            COALESCE(valor_frete, 0)::numeric AS valor_frete
-          FROM app.viagens
-          WHERE id_empresa = $1
-            AND data_inicio >= $2::timestamptz
-            AND data_inicio < $3::timestamptz
-          ORDER BY data_inicio DESC, id_viagem DESC
-          LIMIT 160
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-    ]);
+    const resumoRows = (await manager.query(
+      `
+        SELECT
+          COUNT(1)::int AS total_viagens,
+          COUNT(1) FILTER (WHERE data_fim IS NOT NULL)::int AS viagens_fechadas,
+          COUNT(1) FILTER (WHERE data_fim IS NULL)::int AS viagens_abertas,
+          COUNT(1) FILTER (WHERE UPPER(COALESCE(status, '')) = 'C')::int AS viagens_canceladas
+        FROM app.viagens
+        WHERE id_empresa = $1
+          AND data_inicio >= $2::timestamptz
+          AND data_inicio < $3::timestamptz
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
+    const linhasRows = (await manager.query(
+      `
+        SELECT
+          id_viagem,
+          id_veiculo,
+          id_motorista,
+          data_inicio,
+          data_fim,
+          status,
+          COALESCE(valor_frete, 0)::numeric AS valor_frete
+        FROM app.viagens
+        WHERE id_empresa = $1
+          AND data_inicio >= $2::timestamptz
+          AND data_inicio < $3::timestamptz
+        ORDER BY data_inicio DESC, id_viagem DESC
+        LIMIT 160
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
 
     const resumo = resumoRows[0] ?? {};
     const totalViagens = this.converterInteiro(resumo.total_viagens);
@@ -1559,48 +1551,46 @@ export class DashboardService {
     inicio: Date,
     fimExclusivo: Date,
   ): Promise<DetalheIndicadorResultado> {
-    const [resumoRows, linhasRows] = await Promise.all([
-      manager.query(
-        `
-          SELECT
-            COUNT(1)::int AS total_requisicoes,
-            COUNT(1) FILTER (WHERE situacao = 'F')::int AS requisicoes_fechadas,
-            COUNT(1) FILTER (WHERE situacao = 'A')::int AS requisicoes_abertas,
-            COUNT(1) FILTER (WHERE situacao = 'C')::int AS requisicoes_canceladas
-          FROM app.requisicao
-          WHERE id_empresa = $1
-            AND data_requisicao >= $2::timestamptz
-            AND data_requisicao < $3::timestamptz
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-      manager.query(
-        `
-          SELECT
-            req.id_requisicao,
-            req.id_os,
-            req.data_requisicao,
-            req.situacao,
-            COALESCE(
-              SUM(
-                COALESCE(itens.qtd_produto, 0)::numeric * COALESCE(itens.valor_un, 0)::numeric
-              ),
-              0
-            )::numeric AS valor_total_calculado
-          FROM app.requisicao req
-          LEFT JOIN app.requisicao_itens itens
-            ON itens.id_requisicao = req.id_requisicao
-           AND itens.id_empresa = req.id_empresa
-          WHERE req.id_empresa = $1
-            AND req.data_requisicao >= $2::timestamptz
-            AND req.data_requisicao < $3::timestamptz
-          GROUP BY req.id_requisicao, req.id_os, req.data_requisicao, req.situacao
-          ORDER BY req.data_requisicao DESC, req.id_requisicao DESC
-          LIMIT 160
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-    ]);
+    const resumoRows = (await manager.query(
+      `
+        SELECT
+          COUNT(1)::int AS total_requisicoes,
+          COUNT(1) FILTER (WHERE situacao = 'F')::int AS requisicoes_fechadas,
+          COUNT(1) FILTER (WHERE situacao = 'A')::int AS requisicoes_abertas,
+          COUNT(1) FILTER (WHERE situacao = 'C')::int AS requisicoes_canceladas
+        FROM app.requisicao
+        WHERE id_empresa = $1
+          AND data_requisicao >= $2::timestamptz
+          AND data_requisicao < $3::timestamptz
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
+    const linhasRows = (await manager.query(
+      `
+        SELECT
+          req.id_requisicao,
+          req.id_os,
+          req.data_requisicao,
+          req.situacao,
+          COALESCE(
+            SUM(
+              COALESCE(itens.qtd_produto, 0)::numeric * COALESCE(itens.valor_un, 0)::numeric
+            ),
+            0
+          )::numeric AS valor_total_calculado
+        FROM app.requisicao req
+        LEFT JOIN app.requisicao_itens itens
+          ON itens.id_requisicao = req.id_requisicao
+         AND itens.id_empresa = req.id_empresa
+        WHERE req.id_empresa = $1
+          AND req.data_requisicao >= $2::timestamptz
+          AND req.data_requisicao < $3::timestamptz
+        GROUP BY req.id_requisicao, req.id_os, req.data_requisicao, req.situacao
+        ORDER BY req.data_requisicao DESC, req.id_requisicao DESC
+        LIMIT 160
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
 
     const resumo = resumoRows[0] ?? {};
     const totalRequisicoes = this.converterInteiro(resumo.total_requisicoes);
@@ -1897,29 +1887,27 @@ export class DashboardService {
       ? `COUNT(1) FILTER (WHERE ${this.colunaComAlias('v', colunasVeiculo.idMotoristaAtual)} IS NULL)::int`
       : '0::int';
 
-    const [frotaRows, usoRows] = await Promise.all([
-      manager.query(
-        `
-          SELECT
-            COUNT(1)::int AS total_veiculos,
-            ${exprSemMotorista} AS veiculos_sem_motorista
-          FROM app.veiculo v
-          WHERE ${filtroEmpresa}
-        `,
-        [String(idEmpresa)],
-      ) as Promise<RegistroBanco[]>,
-      manager.query(
-        `
-          SELECT
-            COUNT(DISTINCT viagem.id_veiculo)::int AS veiculos_com_viagem
-          FROM app.viagens viagem
-          WHERE viagem.id_empresa = $1
-            AND viagem.data_inicio >= $2::timestamptz
-            AND viagem.data_inicio < $3::timestamptz
-        `,
-        [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
-      ) as Promise<RegistroBanco[]>,
-    ]);
+    const frotaRows = (await manager.query(
+      `
+        SELECT
+          COUNT(1)::int AS total_veiculos,
+          ${exprSemMotorista} AS veiculos_sem_motorista
+        FROM app.veiculo v
+        WHERE ${filtroEmpresa}
+      `,
+      [String(idEmpresa)],
+    )) as RegistroBanco[];
+    const usoRows = (await manager.query(
+      `
+        SELECT
+          COUNT(DISTINCT viagem.id_veiculo)::int AS veiculos_com_viagem
+        FROM app.viagens viagem
+        WHERE viagem.id_empresa = $1
+          AND viagem.data_inicio >= $2::timestamptz
+          AND viagem.data_inicio < $3::timestamptz
+      `,
+      [String(idEmpresa), inicio.toISOString(), fimExclusivo.toISOString()],
+    )) as RegistroBanco[];
 
     const frota = frotaRows[0] ?? {};
     const uso = usoRows[0] ?? {};
@@ -1974,38 +1962,36 @@ export class DashboardService {
     diasOsAbertasCriticas: number,
     colunasVeiculo: MapaColunasVeiculoDashboard,
   ): Promise<ResumoAlertas> {
-    const [cnhRows, docRows, osRows] = await Promise.all([
-      manager.query(
-        `
-          SELECT
-            COUNT(1) FILTER (WHERE validade_cnh < CURRENT_DATE)::int AS cnh_vencida,
-            COUNT(1) FILTER (
-              WHERE validade_cnh >= CURRENT_DATE
-                AND validade_cnh <= CURRENT_DATE + $2::int
-            )::int AS cnh_vencendo
-          FROM app.motoristas
-          WHERE id_empresa = $1
-        `,
-        [String(idEmpresa), diasAlertaDocumentos],
-      ) as Promise<RegistroBanco[]>,
-      this.carregarResumoAlertasDocumentoVeiculo(
-        manager,
-        idEmpresa,
-        diasAlertaDocumentos,
-        colunasVeiculo,
-      ),
-      manager.query(
-        `
-          SELECT
-            COUNT(1)::int AS os_abertas_criticas
-          FROM app.ordem_servico
-          WHERE id_empresa = $1
-            AND situacao_os = 'A'
-            AND data_cadastro < NOW() - ($2::int * INTERVAL '1 day')
-        `,
-        [String(idEmpresa), diasOsAbertasCriticas],
-      ) as Promise<RegistroBanco[]>,
-    ]);
+    const cnhRows = (await manager.query(
+      `
+        SELECT
+          COUNT(1) FILTER (WHERE validade_cnh < CURRENT_DATE)::int AS cnh_vencida,
+          COUNT(1) FILTER (
+            WHERE validade_cnh >= CURRENT_DATE
+              AND validade_cnh <= CURRENT_DATE + $2::int
+          )::int AS cnh_vencendo
+        FROM app.motoristas
+        WHERE id_empresa = $1
+      `,
+      [String(idEmpresa), diasAlertaDocumentos],
+    )) as RegistroBanco[];
+    const docRows = await this.carregarResumoAlertasDocumentoVeiculo(
+      manager,
+      idEmpresa,
+      diasAlertaDocumentos,
+      colunasVeiculo,
+    );
+    const osRows = (await manager.query(
+      `
+        SELECT
+          COUNT(1)::int AS os_abertas_criticas
+        FROM app.ordem_servico
+        WHERE id_empresa = $1
+          AND situacao_os = 'A'
+          AND data_cadastro < NOW() - ($2::int * INTERVAL '1 day')
+      `,
+      [String(idEmpresa), diasOsAbertasCriticas],
+    )) as RegistroBanco[];
 
     const cnh = cnhRows[0] ?? {};
     const doc = docRows[0] ?? {};
@@ -2199,63 +2185,60 @@ export class DashboardService {
       ? `${this.colunaComAlias('ab', colunasAbastecimento.idEmpresa)} = $1`
       : '$1::text IS NOT NULL';
 
-    const [mesesRows, faturamentoRows, combustivelRows, manutencaoRows] =
-      await Promise.all([
-        manager.query(
-          `
-            SELECT
-              generate_series($1::date, $2::date, interval '1 month')::date AS inicio_mes
-          `,
-          [this.formatarDataIso(inicioSerie), this.formatarDataIso(referenciaMes)],
-        ) as Promise<RegistroBanco[]>,
-        manager.query(
-          `
-            SELECT
-              date_trunc('month', data_inicio)::date AS inicio_mes,
-              COALESCE(SUM(COALESCE(valor_frete, 0)::numeric), 0)::numeric AS valor
-            FROM app.viagens
-            WHERE id_empresa = $1
-              AND data_inicio >= $2::timestamptz
-              AND data_inicio < $3::timestamptz
-            GROUP BY 1
-          `,
-          [String(idEmpresa), inicioSerie.toISOString(), fimSerieExclusivo.toISOString()],
-        ) as Promise<RegistroBanco[]>,
-        manager.query(
-          `
-            SELECT
-              date_trunc('month', ${dataColunaAb})::date AS inicio_mes,
-              COALESCE(SUM(${custoExprAb}), 0)::numeric AS valor
-            FROM app.abastecimentos ab
-            WHERE ${filtroEmpresaAb}
-              AND ${dataColunaAb} >= $2::timestamptz
-              AND ${dataColunaAb} < $3::timestamptz
-            GROUP BY 1
-          `,
-          [String(idEmpresa), inicioSerie.toISOString(), fimSerieExclusivo.toISOString()],
-        ) as Promise<RegistroBanco[]>,
-        manager.query(
-          `
-            SELECT
-              date_trunc('month', data_cadastro)::date AS inicio_mes,
-              COALESCE(
-                SUM(
-                  CASE
-                    WHEN situacao_os = 'C' THEN 0
-                    ELSE COALESCE(valor_total, 0)::numeric
-                  END
-                ),
-                0
-              )::numeric AS valor
-            FROM app.ordem_servico
-            WHERE id_empresa = $1
-              AND data_cadastro >= $2::timestamptz
-              AND data_cadastro < $3::timestamptz
-            GROUP BY 1
-          `,
-          [String(idEmpresa), inicioSerie.toISOString(), fimSerieExclusivo.toISOString()],
-        ) as Promise<RegistroBanco[]>,
-      ]);
+    const mesesRows = (await manager.query(
+      `
+        SELECT
+          generate_series($1::date, $2::date, interval '1 month')::date AS inicio_mes
+      `,
+      [this.formatarDataIso(inicioSerie), this.formatarDataIso(referenciaMes)],
+    )) as RegistroBanco[];
+    const faturamentoRows = (await manager.query(
+      `
+        SELECT
+          date_trunc('month', data_inicio)::date AS inicio_mes,
+          COALESCE(SUM(COALESCE(valor_frete, 0)::numeric), 0)::numeric AS valor
+        FROM app.viagens
+        WHERE id_empresa = $1
+          AND data_inicio >= $2::timestamptz
+          AND data_inicio < $3::timestamptz
+        GROUP BY 1
+      `,
+      [String(idEmpresa), inicioSerie.toISOString(), fimSerieExclusivo.toISOString()],
+    )) as RegistroBanco[];
+    const combustivelRows = (await manager.query(
+      `
+        SELECT
+          date_trunc('month', ${dataColunaAb})::date AS inicio_mes,
+          COALESCE(SUM(${custoExprAb}), 0)::numeric AS valor
+        FROM app.abastecimentos ab
+        WHERE ${filtroEmpresaAb}
+          AND ${dataColunaAb} >= $2::timestamptz
+          AND ${dataColunaAb} < $3::timestamptz
+        GROUP BY 1
+      `,
+      [String(idEmpresa), inicioSerie.toISOString(), fimSerieExclusivo.toISOString()],
+    )) as RegistroBanco[];
+    const manutencaoRows = (await manager.query(
+      `
+        SELECT
+          date_trunc('month', data_cadastro)::date AS inicio_mes,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN situacao_os = 'C' THEN 0
+                ELSE COALESCE(valor_total, 0)::numeric
+              END
+            ),
+            0
+          )::numeric AS valor
+        FROM app.ordem_servico
+        WHERE id_empresa = $1
+          AND data_cadastro >= $2::timestamptz
+          AND data_cadastro < $3::timestamptz
+        GROUP BY 1
+      `,
+      [String(idEmpresa), inicioSerie.toISOString(), fimSerieExclusivo.toISOString()],
+    )) as RegistroBanco[];
 
     const mapFaturamento = this.criarMapaMensalPorValor(faturamentoRows);
     const mapCombustivel = this.criarMapaMensalPorValor(combustivelRows);

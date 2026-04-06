@@ -128,6 +128,10 @@ const ROTAS_SISTEMA_POR_MODULO: Array<{
     modulos: ['despesas'],
   },
   {
+    prefixos: ['/api/multas', '/api/sistema/multas'],
+    modulos: ['multas'],
+  },
+  {
     prefixos: ['/api/motoristas', '/api/sistema/motoristas'],
     modulos: ['motoristas'],
   },

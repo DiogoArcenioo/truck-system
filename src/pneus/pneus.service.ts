@@ -224,25 +224,24 @@ export class PneusService {
         ${whereSql}
       `;
 
-      const [countRows, rows] = await Promise.all([
-        manager.query(`SELECT COUNT(1)::int AS total ${sqlBase}`, valores) as Promise<
-          Array<{ total?: unknown }>
-        >,
-        manager.query(
-          `
-          SELECT
-            p.*,
-            pv.id_veiculo AS id_veiculo_atual,
-            pv.posicao AS posicao_atual,
-            v.placa AS placa_veiculo_atual
-          ${sqlBase}
-          ORDER BY ${ordenarPor} ${ordem}, p.id_pneu DESC
-          LIMIT $${valores.length + 1}
-          OFFSET $${valores.length + 2}
-          `,
-          [...valores, limite, offset],
-        ) as Promise<RegistroBanco[]>,
-      ]);
+      const countRows = (await manager.query(
+        `SELECT COUNT(1)::int AS total ${sqlBase}`,
+        valores,
+      )) as Array<{ total?: unknown }>;
+      const rows = (await manager.query(
+        `
+        SELECT
+          p.*,
+          pv.id_veiculo AS id_veiculo_atual,
+          pv.posicao AS posicao_atual,
+          v.placa AS placa_veiculo_atual
+        ${sqlBase}
+        ORDER BY ${ordenarPor} ${ordem}, p.id_pneu DESC
+        LIMIT $${valores.length + 1}
+        OFFSET $${valores.length + 2}
+        `,
+        [...valores, limite, offset],
+      )) as RegistroBanco[];
 
       const total = this.toNumber(countRows[0]?.total) ?? 0;
       return {
