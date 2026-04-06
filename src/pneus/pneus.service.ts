@@ -219,7 +219,7 @@ export class PneusService {
          AND pv.id_pneu = p.id_pneu
          AND pv.ativo = true
         LEFT JOIN app.veiculo v
-          ON v.id_empresa = p.id_empresa
+          ON CAST(v.id_empresa AS TEXT) = CAST(p.id_empresa AS TEXT)
          AND v.id_veiculo = pv.id_veiculo
         ${whereSql}
       `;
@@ -264,25 +264,38 @@ export class PneusService {
 
   async listarOpcoes(idEmpresa: number) {
     return this.executarComRls(idEmpresa, async (manager) => {
-      const veiculosRows = (await manager.query(
-        `
-        SELECT id_veiculo, placa, status
-        FROM app.veiculo
-        WHERE id_empresa = $1
-        ORDER BY placa ASC
-        `,
-        [idEmpresa],
-      )) as RegistroBanco[];
-      const resumoRows = (await manager.query(
-        `
-        SELECT status_local, COUNT(1)::int AS total
-        FROM app.pneus
-        WHERE id_empresa = $1
-          AND ativo = true
-        GROUP BY status_local
-        `,
-        [idEmpresa],
-      )) as RegistroBanco[];
+      const [veiculosRows, resumoRows] = await Promise.all([
+        manager.query(
+          `
+          SELECT
+            v.id_veiculo,
+            v.placa,
+            COALESCE(
+              NULLIF(UPPER(TRIM(COALESCE(to_jsonb(v)->>'status', ''))), ''),
+              NULLIF(UPPER(TRIM(COALESCE(to_jsonb(v)->>'situacao', ''))), ''),
+              CASE
+                WHEN LOWER(COALESCE(to_jsonb(v)->>'ativo', '')) IN ('true', 't', '1') THEN 'A'
+                WHEN LOWER(COALESCE(to_jsonb(v)->>'ativo', '')) IN ('false', 'f', '0') THEN 'I'
+                ELSE NULL
+              END
+            ) AS status
+          FROM app.veiculo v
+          WHERE CAST(v.id_empresa AS TEXT) = $1
+          ORDER BY v.placa ASC
+          `,
+          [String(idEmpresa)],
+        ) as Promise<RegistroBanco[]>,
+        manager.query(
+          `
+          SELECT status_local, COUNT(1)::int AS total
+          FROM app.pneus
+          WHERE id_empresa = $1
+            AND ativo = true
+          GROUP BY status_local
+          `,
+          [String(idEmpresa)],
+        ) as Promise<RegistroBanco[]>,
+      ]);
 
       const resumo: Record<StatusLocalPneu, number> = {
         ESTOQUE: 0,
@@ -363,13 +376,13 @@ export class PneusService {
           vd.placa AS placa_veiculo_destino
         FROM app.pneu_movimentacoes m
         LEFT JOIN app.pneus p
-          ON p.id_empresa = m.id_empresa
+          ON CAST(p.id_empresa AS TEXT) = CAST(m.id_empresa AS TEXT)
          AND p.id_pneu = m.id_pneu
         LEFT JOIN app.veiculo vo
-          ON vo.id_empresa = m.id_empresa
+          ON CAST(vo.id_empresa AS TEXT) = CAST(m.id_empresa AS TEXT)
          AND vo.id_veiculo = m.id_veiculo_origem
         LEFT JOIN app.veiculo vd
-          ON vd.id_empresa = m.id_empresa
+          ON CAST(vd.id_empresa AS TEXT) = CAST(m.id_empresa AS TEXT)
          AND vd.id_veiculo = m.id_veiculo_destino
         ${whereSql}
         ORDER BY m.data_movimentacao DESC, m.id_movimentacao DESC
@@ -622,9 +635,16 @@ export class PneusService {
           throw new BadRequestException('Pneu inativo nao pode ser movimentado.');
         }
 
-        const vinculoAtivo = await this.buscarVinculoAtivoPneu(manager, idEmpresa, dados.idPneu);
+        const vinculoAtivo = await this.buscarVinculoAtivoPneu(
+          manager,
+          idEmpresa,
+          dados.idPneu,
+        );
         const idVeiculoOrigem = vinculoAtivo?.idVeiculo ?? null;
-        const posicaoOrigem = vinculoAtivo?.posicao ?? null;
+        let posicaoOrigem = vinculoAtivo?.posicao ?? null;
+        if (!idVeiculoOrigem) {
+          posicaoOrigem = pneu.statusLocal;
+        }
 
         let idVeiculoDestino: number | null = null;
         let posicaoDestino: string | null = null;
@@ -728,7 +748,7 @@ export class PneusService {
        AND pv.id_pneu = p.id_pneu
        AND pv.ativo = true
       LEFT JOIN app.veiculo v
-        ON v.id_empresa = p.id_empresa
+        ON CAST(v.id_empresa AS TEXT) = CAST(p.id_empresa AS TEXT)
        AND v.id_veiculo = pv.id_veiculo
       WHERE p.id_empresa = $1
         AND p.id_pneu = $2
@@ -806,11 +826,11 @@ export class PneusService {
       `
       SELECT id_veiculo
       FROM app.veiculo
-      WHERE id_empresa = $1
+      WHERE CAST(id_empresa AS TEXT) = $1
         AND id_veiculo = $2
       LIMIT 1
       `,
-      [idEmpresa, idVeiculo],
+      [String(idEmpresa), idVeiculo],
     )) as RegistroBanco[];
 
     if (!rows[0]) {
