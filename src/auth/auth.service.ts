@@ -203,6 +203,7 @@ export class AuthService {
         idEmpresa: Number(empresa.idEmpresa),
         codigoEmpresa: empresa.codigo,
         nomeEmpresa: empresa.nomeFantasia,
+        nomeUsuario: usuario.nome,
         email: usuario.email,
         perfil: perfilEfetivo,
         permissoes: permissoesEfetivas,
@@ -1251,6 +1252,7 @@ export class AuthService {
       idEmpresa: number;
       codigoEmpresa: string;
       nomeEmpresa?: string;
+      nomeUsuario?: string;
       email: string;
       perfil: string;
       permissoes?: PermissoesSistema;

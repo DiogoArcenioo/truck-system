@@ -636,9 +636,16 @@ export class PneusService {
           throw new BadRequestException('Pneu inativo nao pode ser movimentado.');
         }
 
-        const vinculoAtivo = await this.buscarVinculoAtivoPneu(manager, idEmpresa, dados.idPneu);
+        const vinculoAtivo = await this.buscarVinculoAtivoPneu(
+          manager,
+          idEmpresa,
+          dados.idPneu,
+        );
         const idVeiculoOrigem = vinculoAtivo?.idVeiculo ?? null;
-        const posicaoOrigem = vinculoAtivo?.posicao ?? null;
+        let posicaoOrigem = vinculoAtivo?.posicao ?? null;
+        if (!idVeiculoOrigem) {
+          posicaoOrigem = pneu.statusLocal;
+        }
 
         let idVeiculoDestino: number | null = null;
         let posicaoDestino: string | null = null;

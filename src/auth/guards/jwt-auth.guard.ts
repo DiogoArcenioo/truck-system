@@ -22,6 +22,7 @@ type JwtPayloadBruto = {
   idEmpresa?: unknown;
   codigoEmpresa?: unknown;
   nomeEmpresa?: unknown;
+  nomeUsuario?: unknown;
   email?: unknown;
   perfil?: unknown;
   permissoes?: unknown;
@@ -41,6 +42,7 @@ export type JwtUsuarioPayload = {
   idEmpresa: number;
   codigoEmpresa: string;
   nomeEmpresa?: string;
+  nomeUsuario?: string;
   email: string;
   perfil: string;
   permissoes?: PermissoesSistema;
@@ -155,6 +157,7 @@ export class JwtAuthGuard implements CanActivate {
       'codigoEmpresa',
     );
     const nomeEmpresa = this.validarTextoOpcional(payload.nomeEmpresa);
+    const nomeUsuario = this.validarTextoOpcional(payload.nomeUsuario);
     const email = this.validarTexto(payload.email, 'email');
     const perfil = this.validarTexto(payload.perfil, 'perfil');
     const permissoes = this.validarPermissoesOpcional(payload.permissoes);
@@ -171,6 +174,7 @@ export class JwtAuthGuard implements CanActivate {
       idEmpresa,
       codigoEmpresa,
       nomeEmpresa,
+      nomeUsuario,
       email,
       perfil,
       permissoes,
