@@ -1142,98 +1142,33 @@ export class PneusService {
 
     this.inicializacaoEmAndamento = (async () => {
       try {
-        await this.dataSource.query(`
-          CREATE TABLE IF NOT EXISTS app.pneus (
-            id_pneu BIGSERIAL PRIMARY KEY,
-            id_empresa BIGINT NOT NULL,
-            numero_fogo VARCHAR(60) NOT NULL,
-            marca VARCHAR(80),
-            modelo VARCHAR(80),
-            medida VARCHAR(40),
-            tipo VARCHAR(40),
-            valor NUMERIC(14,2) NOT NULL DEFAULT 0,
-            status_local VARCHAR(20) NOT NULL DEFAULT 'ESTOQUE',
-            ativo BOOLEAN NOT NULL DEFAULT TRUE,
-            observacoes TEXT,
-            usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
-            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT ck_pneus_status_local
-              CHECK (status_local IN ('ESTOQUE', 'EM_USO', 'CONSERTO', 'BAIXA', 'DESCARTE'))
-          )
-        `);
+        const estruturaJaExiste = await this.verificarEstruturaPneusExiste();
+        if (estruturaJaExiste) {
+          this.estruturaDisponivel = true;
+          this.estruturaInicializada = true;
+          return;
+        }
 
-        await this.dataSource.query(`
-          CREATE UNIQUE INDEX IF NOT EXISTS ux_pneus_empresa_numero_fogo
-          ON app.pneus (id_empresa, numero_fogo)
-        `);
+        try {
+          await this.executarScriptCriacaoEstruturaPneus();
+        } catch (errorCriacao) {
+          const erroPg =
+            errorCriacao instanceof QueryFailedError
+              ? (errorCriacao.driverError as { code?: string; message?: string })
+              : null;
+          const estruturaDisponivelAposFalha = await this.verificarEstruturaPneusExiste();
+          if (estruturaDisponivelAposFalha) {
+            this.logger.warn(
+              `Estrutura de pneus ja existe no banco, ignorando erro de criacao automatica. code=${erroPg?.code ?? 'N/A'} message=${erroPg?.message ?? (errorCriacao instanceof Error ? errorCriacao.message : 'Erro desconhecido')}`,
+            );
+            this.estruturaDisponivel = true;
+            this.estruturaInicializada = true;
+            return;
+          }
+          throw errorCriacao;
+        }
 
-        await this.dataSource.query(`
-          CREATE INDEX IF NOT EXISTS ix_pneus_empresa_status_local
-          ON app.pneus (id_empresa, status_local)
-        `);
-
-        await this.dataSource.query(`
-          CREATE TABLE IF NOT EXISTS app.pneu_vinculos_veiculo (
-            id_vinculo BIGSERIAL PRIMARY KEY,
-            id_empresa BIGINT NOT NULL,
-            id_pneu BIGINT NOT NULL,
-            id_veiculo BIGINT NOT NULL,
-            posicao VARCHAR(30) NOT NULL,
-            ativo BOOLEAN NOT NULL DEFAULT TRUE,
-            usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
-            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          )
-        `);
-
-        await this.dataSource.query(`
-          CREATE UNIQUE INDEX IF NOT EXISTS ux_pneu_vinculo_ativo_por_pneu
-          ON app.pneu_vinculos_veiculo (id_empresa, id_pneu)
-          WHERE ativo = true
-        `);
-
-        await this.dataSource.query(`
-          CREATE UNIQUE INDEX IF NOT EXISTS ux_pneu_vinculo_ativo_por_posicao
-          ON app.pneu_vinculos_veiculo (id_empresa, id_veiculo, posicao)
-          WHERE ativo = true
-        `);
-
-        await this.dataSource.query(`
-          CREATE INDEX IF NOT EXISTS ix_pneu_vinculos_veiculo_empresa_veiculo
-          ON app.pneu_vinculos_veiculo (id_empresa, id_veiculo)
-        `);
-
-        await this.dataSource.query(`
-          CREATE TABLE IF NOT EXISTS app.pneu_movimentacoes (
-            id_movimentacao BIGSERIAL PRIMARY KEY,
-            id_empresa BIGINT NOT NULL,
-            id_pneu BIGINT NOT NULL,
-            id_veiculo_origem BIGINT,
-            posicao_origem VARCHAR(30),
-            destino VARCHAR(20) NOT NULL,
-            id_veiculo_destino BIGINT,
-            posicao_destino VARCHAR(30),
-            motivo VARCHAR(120),
-            observacoes TEXT,
-            usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
-            data_movimentacao TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT ck_pneu_movimentacoes_destino
-              CHECK (destino IN ('ESTOQUE', 'CONSERTO', 'BAIXA', 'DESCARTE', 'VEICULO'))
-          )
-        `);
-
-        await this.dataSource.query(`
-          CREATE INDEX IF NOT EXISTS ix_pneu_movimentacoes_empresa_data
-          ON app.pneu_movimentacoes (id_empresa, data_movimentacao DESC)
-        `);
-
-        await this.dataSource.query(`
-          CREATE INDEX IF NOT EXISTS ix_pneu_movimentacoes_empresa_pneu
-          ON app.pneu_movimentacoes (id_empresa, id_pneu)
-        `);
-
+        this.estruturaDisponivel = await this.verificarEstruturaPneusExiste();
         this.estruturaInicializada = true;
       } catch (error) {
         this.logger.error(
@@ -1247,6 +1182,124 @@ export class PneusService {
     })();
 
     await this.inicializacaoEmAndamento;
+  }
+
+  private async verificarEstruturaPneusExiste(): Promise<boolean> {
+    const rows = (await this.dataSource.query(
+      `
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'app'
+        AND table_name IN ('pneus', 'pneu_vinculos_veiculo', 'pneu_movimentacoes')
+      `,
+    )) as RegistroBanco[];
+
+    const existentes = new Set(
+      rows
+        .map((row) => this.toText(row.table_name))
+        .filter((table): table is string => Boolean(table))
+        .map((table) => table.toLowerCase()),
+    );
+
+    return (
+      existentes.has('pneus') &&
+      existentes.has('pneu_vinculos_veiculo') &&
+      existentes.has('pneu_movimentacoes')
+    );
+  }
+
+  private async executarScriptCriacaoEstruturaPneus() {
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS app.pneus (
+        id_pneu BIGSERIAL PRIMARY KEY,
+        id_empresa BIGINT NOT NULL,
+        numero_fogo VARCHAR(60) NOT NULL,
+        marca VARCHAR(80),
+        modelo VARCHAR(80),
+        medida VARCHAR(40),
+        tipo VARCHAR(40),
+        valor NUMERIC(14,2) NOT NULL DEFAULT 0,
+        status_local VARCHAR(20) NOT NULL DEFAULT 'ESTOQUE',
+        ativo BOOLEAN NOT NULL DEFAULT TRUE,
+        observacoes TEXT,
+        usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT ck_pneus_status_local
+          CHECK (status_local IN ('ESTOQUE', 'EM_USO', 'CONSERTO', 'BAIXA', 'DESCARTE'))
+      )
+    `);
+
+    await this.dataSource.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_pneus_empresa_numero_fogo
+      ON app.pneus (id_empresa, numero_fogo)
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS ix_pneus_empresa_status_local
+      ON app.pneus (id_empresa, status_local)
+    `);
+
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS app.pneu_vinculos_veiculo (
+        id_vinculo BIGSERIAL PRIMARY KEY,
+        id_empresa BIGINT NOT NULL,
+        id_pneu BIGINT NOT NULL,
+        id_veiculo BIGINT NOT NULL,
+        posicao VARCHAR(30) NOT NULL,
+        ativo BOOLEAN NOT NULL DEFAULT TRUE,
+        usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await this.dataSource.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_pneu_vinculo_ativo_por_pneu
+      ON app.pneu_vinculos_veiculo (id_empresa, id_pneu)
+      WHERE ativo = true
+    `);
+
+    await this.dataSource.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_pneu_vinculo_ativo_por_posicao
+      ON app.pneu_vinculos_veiculo (id_empresa, id_veiculo, posicao)
+      WHERE ativo = true
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS ix_pneu_vinculos_veiculo_empresa_veiculo
+      ON app.pneu_vinculos_veiculo (id_empresa, id_veiculo)
+    `);
+
+    await this.dataSource.query(`
+      CREATE TABLE IF NOT EXISTS app.pneu_movimentacoes (
+        id_movimentacao BIGSERIAL PRIMARY KEY,
+        id_empresa BIGINT NOT NULL,
+        id_pneu BIGINT NOT NULL,
+        id_veiculo_origem BIGINT,
+        posicao_origem VARCHAR(30),
+        destino VARCHAR(20) NOT NULL,
+        id_veiculo_destino BIGINT,
+        posicao_destino VARCHAR(30),
+        motivo VARCHAR(120),
+        observacoes TEXT,
+        usuario_atualizacao TEXT NOT NULL DEFAULT 'SISTEMA',
+        data_movimentacao TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT ck_pneu_movimentacoes_destino
+          CHECK (destino IN ('ESTOQUE', 'CONSERTO', 'BAIXA', 'DESCARTE', 'VEICULO'))
+      )
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS ix_pneu_movimentacoes_empresa_data
+      ON app.pneu_movimentacoes (id_empresa, data_movimentacao DESC)
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS ix_pneu_movimentacoes_empresa_pneu
+      ON app.pneu_movimentacoes (id_empresa, id_pneu)
+    `);
   }
 
   private exigirEstruturaDisponivel() {
