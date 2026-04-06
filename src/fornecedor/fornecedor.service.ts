@@ -119,7 +119,30 @@ export class FornecedorService {
         SELECT
           f.*,
           (SELECT COUNT(1)::int FROM app.fornecedor_contatos c WHERE c.id_fornecedor = f.id_fornecedor) AS qtd_contatos,
-          (SELECT COUNT(1)::int FROM app.fornecedor_enderecos e WHERE e.id_fornecedor = f.id_fornecedor) AS qtd_enderecos
+          (SELECT COUNT(1)::int FROM app.fornecedor_enderecos e WHERE e.id_fornecedor = f.id_fornecedor) AS qtd_enderecos,
+          (
+            SELECT COALESCE(NULLIF(c.celular, ''), NULLIF(c.telefone, ''))
+            FROM app.fornecedor_contatos c
+            WHERE c.id_fornecedor = f.id_fornecedor
+            ORDER BY c.principal DESC, c.id_contato ASC
+            LIMIT 1
+          ) AS resumo_contato,
+          (
+            SELECT TRIM(
+              BOTH ' /' FROM CONCAT(
+                COALESCE(NULLIF(e.cidade, ''), ''),
+                CASE
+                  WHEN NULLIF(e.estado, '') IS NOT NULL AND NULLIF(e.cidade, '') IS NOT NULL THEN '/'
+                  ELSE ''
+                END,
+                COALESCE(NULLIF(e.estado, ''), '')
+              )
+            )
+            FROM app.fornecedor_enderecos e
+            WHERE e.id_fornecedor = f.id_fornecedor
+            ORDER BY e.principal DESC, e.id_endereco ASC
+            LIMIT 1
+          ) AS resumo_endereco
         FROM app.fornecedor f
         ${whereSql}
         ORDER BY ${colunaOrdenacao} ${ordem}, f.id_fornecedor ASC
@@ -127,10 +150,12 @@ export class FornecedorService {
         OFFSET $${valores.length + 2}
       `;
 
-      const [countRows, rows] = await Promise.all([
-        manager.query(sqlCount, valores) as Promise<Array<{ total: number }>>,
-        manager.query(sqlDados, [...valores, limite, offset]) as Promise<RegistroBanco[]>,
-      ]);
+      const countRows = (await manager.query(sqlCount, valores)) as Array<{ total: number }>;
+      const rows = (await manager.query(sqlDados, [
+        ...valores,
+        limite,
+        offset,
+      ])) as RegistroBanco[];
 
       const total = Number(countRows[0]?.total ?? 0);
       const fornecedores = rows.map((row) => this.mapearFornecedor(row));
@@ -267,7 +292,7 @@ export class FornecedorService {
         )) as Array<{ id_fornecedor?: string | number }>;
 
         if (!rows[0]) {
-          throw new NotFoundException('Fornecedor nao encontrado para a empresa logada.');
+          throw new NotFoundException('Fornecedor não encontrado para a empresa logada.');
         }
 
         const fornecedor = await this.carregarFornecedorCompleto(
@@ -474,7 +499,7 @@ export class FornecedorService {
 
         const idEndereco = this.toNum(rows[0]?.id_endereco);
         if (!idEndereco || idEndereco <= 0) {
-          throw new BadRequestException('Falha ao cadastrar endereco.');
+          throw new BadRequestException('Falha ao cadastrar endereço.');
         }
 
         if (payload.principal) {
@@ -488,10 +513,10 @@ export class FornecedorService {
           idEmpresa,
           idFornecedor,
         );
-        return { sucesso: true, mensagem: 'Endereco cadastrado com sucesso.', fornecedor };
+        return { sucesso: true, mensagem: 'Endereço cadastrado com sucesso.', fornecedor };
       });
     } catch (error) {
-      this.tratarErroPersistencia(error, 'cadastrar endereco');
+      this.tratarErroPersistencia(error, 'cadastrar endereço');
     }
   }
 
@@ -555,10 +580,10 @@ export class FornecedorService {
           idEmpresa,
           idFornecedor,
         );
-        return { sucesso: true, mensagem: 'Endereco atualizado com sucesso.', fornecedor };
+        return { sucesso: true, mensagem: 'Endereço atualizado com sucesso.', fornecedor };
       });
     } catch (error) {
-      this.tratarErroPersistencia(error, 'atualizar endereco');
+      this.tratarErroPersistencia(error, 'atualizar endereço');
     }
   }
 
@@ -577,10 +602,10 @@ export class FornecedorService {
           idEmpresa,
           idFornecedor,
         );
-        return { sucesso: true, mensagem: 'Endereco removido com sucesso.', fornecedor };
+        return { sucesso: true, mensagem: 'Endereço removido com sucesso.', fornecedor };
       });
     } catch (error) {
-      this.tratarErroPersistencia(error, 'remover endereco');
+      this.tratarErroPersistencia(error, 'remover endereço');
     }
   }
 
@@ -590,7 +615,30 @@ export class FornecedorService {
         SELECT
           f.*,
           (SELECT COUNT(1)::int FROM app.fornecedor_contatos c WHERE c.id_fornecedor = f.id_fornecedor) AS qtd_contatos,
-          (SELECT COUNT(1)::int FROM app.fornecedor_enderecos e WHERE e.id_fornecedor = f.id_fornecedor) AS qtd_enderecos
+          (SELECT COUNT(1)::int FROM app.fornecedor_enderecos e WHERE e.id_fornecedor = f.id_fornecedor) AS qtd_enderecos,
+          (
+            SELECT COALESCE(NULLIF(c.celular, ''), NULLIF(c.telefone, ''))
+            FROM app.fornecedor_contatos c
+            WHERE c.id_fornecedor = f.id_fornecedor
+            ORDER BY c.principal DESC, c.id_contato ASC
+            LIMIT 1
+          ) AS resumo_contato,
+          (
+            SELECT TRIM(
+              BOTH ' /' FROM CONCAT(
+                COALESCE(NULLIF(e.cidade, ''), ''),
+                CASE
+                  WHEN NULLIF(e.estado, '') IS NOT NULL AND NULLIF(e.cidade, '') IS NOT NULL THEN '/'
+                  ELSE ''
+                END,
+                COALESCE(NULLIF(e.estado, ''), '')
+              )
+            )
+            FROM app.fornecedor_enderecos e
+            WHERE e.id_fornecedor = f.id_fornecedor
+            ORDER BY e.principal DESC, e.id_endereco ASC
+            LIMIT 1
+          ) AS resumo_endereco
         FROM app.fornecedor f
         WHERE f.id_empresa = $1
         ORDER BY COALESCE(NULLIF(f.nome_fantasia, ''), NULLIF(f.razao_social, ''), NULLIF(f.nome, ''), CAST(f.id_fornecedor AS TEXT)) ASC, f.id_fornecedor ASC
@@ -609,7 +657,30 @@ export class FornecedorService {
         SELECT
           f.*,
           (SELECT COUNT(1)::int FROM app.fornecedor_contatos c WHERE c.id_fornecedor = f.id_fornecedor) AS qtd_contatos,
-          (SELECT COUNT(1)::int FROM app.fornecedor_enderecos e WHERE e.id_fornecedor = f.id_fornecedor) AS qtd_enderecos
+          (SELECT COUNT(1)::int FROM app.fornecedor_enderecos e WHERE e.id_fornecedor = f.id_fornecedor) AS qtd_enderecos,
+          (
+            SELECT COALESCE(NULLIF(c.celular, ''), NULLIF(c.telefone, ''))
+            FROM app.fornecedor_contatos c
+            WHERE c.id_fornecedor = f.id_fornecedor
+            ORDER BY c.principal DESC, c.id_contato ASC
+            LIMIT 1
+          ) AS resumo_contato,
+          (
+            SELECT TRIM(
+              BOTH ' /' FROM CONCAT(
+                COALESCE(NULLIF(e.cidade, ''), ''),
+                CASE
+                  WHEN NULLIF(e.estado, '') IS NOT NULL AND NULLIF(e.cidade, '') IS NOT NULL THEN '/'
+                  ELSE ''
+                END,
+                COALESCE(NULLIF(e.estado, ''), '')
+              )
+            )
+            FROM app.fornecedor_enderecos e
+            WHERE e.id_fornecedor = f.id_fornecedor
+            ORDER BY e.principal DESC, e.id_endereco ASC
+            LIMIT 1
+          ) AS resumo_endereco
         FROM app.fornecedor f
         WHERE f.id_fornecedor = $1
           AND f.id_empresa = $2
@@ -619,13 +690,11 @@ export class FornecedorService {
     )) as RegistroBanco[];
     const row = rows[0];
     if (!row) {
-      throw new NotFoundException('Fornecedor nao encontrado para a empresa logada.');
+      throw new NotFoundException('Fornecedor não encontrado para a empresa logada.');
     }
 
-    const [contatos, enderecos] = await Promise.all([
-      this.listarContatosFornecedor(manager, idEmpresa, idFornecedor),
-      this.listarEnderecosFornecedor(manager, idEmpresa, idFornecedor),
-    ]);
+    const contatos = await this.listarContatosFornecedor(manager, idEmpresa, idFornecedor);
+    const enderecos = await this.listarEnderecosFornecedor(manager, idEmpresa, idFornecedor);
 
     return this.mapearFornecedor(row, contatos, enderecos);
   }
@@ -646,7 +715,7 @@ export class FornecedorService {
       [idFornecedor, String(idEmpresa)],
     )) as RegistroBanco[];
     if (!rows[0]) {
-      throw new NotFoundException('Fornecedor nao encontrado para a empresa logada.');
+      throw new NotFoundException('Fornecedor não encontrado para a empresa logada.');
     }
     return rows[0];
   }
@@ -708,7 +777,7 @@ export class FornecedorService {
       [idFornecedor, idContato, String(idEmpresa)],
     )) as RegistroBanco[];
     if (!rows[0]) {
-      throw new NotFoundException('Contato do fornecedor nao encontrado para a empresa logada.');
+      throw new NotFoundException('Contato do fornecedor não encontrado para a empresa logada.');
     }
     return rows[0];
   }
@@ -733,7 +802,7 @@ export class FornecedorService {
     )) as RegistroBanco[];
     if (!rows[0]) {
       throw new NotFoundException(
-        'Endereco do fornecedor nao encontrado para a empresa logada.',
+        'Endereço do fornecedor não encontrado para a empresa logada.',
       );
     }
     return rows[0];
@@ -852,13 +921,13 @@ export class FornecedorService {
 
     if (payload.cnpj && cnpjExistente === payload.cnpj) {
       throw new BadRequestException(
-        'Ja existe fornecedor com este CNPJ na empresa logada.',
+        'Já existe fornecedor com este CNPJ na empresa logada.',
       );
     }
 
     if (payload.cpf && cpfExistente === payload.cpf) {
       throw new BadRequestException(
-        'Ja existe fornecedor com este CPF na empresa logada.',
+        'Já existe fornecedor com este CPF na empresa logada.',
       );
     }
   }
@@ -1082,6 +1151,24 @@ export class FornecedorService {
       atualizadoEm: this.iso(row.atualizado_em),
       qtdContatos: this.toNum(row.qtd_contatos) ?? contatos?.length ?? 0,
       qtdEnderecos: this.toNum(row.qtd_enderecos) ?? enderecos?.length ?? 0,
+      resumoContato:
+        this.str(row.resumo_contato) ??
+        contatos?.find((item) => item.principal)?.celular ??
+        contatos?.find((item) => item.principal)?.telefone ??
+        contatos?.[0]?.celular ??
+        contatos?.[0]?.telefone ??
+        null,
+      resumoEndereco:
+        this.str(row.resumo_endereco) ??
+        (() => {
+          const enderecoPrincipal =
+            enderecos?.find((item) => item.principal) ?? enderecos?.[0];
+          if (!enderecoPrincipal) return null;
+          const cidade = enderecoPrincipal.cidade?.trim() ?? '';
+          const estado = enderecoPrincipal.estado?.trim() ?? '';
+          if (cidade && estado) return `${cidade}/${estado}`;
+          return cidade || estado || null;
+        })(),
       contatos,
       enderecos,
     };
@@ -1143,17 +1230,17 @@ export class FornecedorService {
 
   private validarFornecedor(payload: PayloadFornecedor) {
     if (payload.tipoPessoa === 'J') {
-      if (!payload.razaoSocial) throw new BadRequestException('razaoSocial e obrigatoria.');
-      if (!payload.cnpj) throw new BadRequestException('cnpj e obrigatorio.');
+      if (!payload.razaoSocial) throw new BadRequestException('Razão social é obrigatória.');
+      if (!payload.cnpj) throw new BadRequestException('CNPJ é obrigatório.');
       return;
     }
-    if (!payload.nomePessoa) throw new BadRequestException('nomePessoa e obrigatorio.');
-    if (!payload.cpf) throw new BadRequestException('cpf e obrigatorio.');
+    if (!payload.nomePessoa) throw new BadRequestException('Nome da pessoa é obrigatório.');
+    if (!payload.cpf) throw new BadRequestException('CPF é obrigatório.');
   }
 
   private texto(valor: string, campo: string, upper = false) {
     const texto = valor.trim();
-    if (!texto) throw new BadRequestException(`${campo} invalido.`);
+    if (!texto) throw new BadRequestException(`${campo} inválido.`);
     return upper ? texto.toUpperCase() : texto;
   }
 
@@ -1168,7 +1255,7 @@ export class FornecedorService {
     const texto = this.textoOpt(valor, false);
     if (!texto) return null;
     const digits = texto.replace(/\D/g, '');
-    if (digits.length !== 11) throw new BadRequestException('cpf invalido.');
+    if (digits.length !== 11) throw new BadRequestException('CPF inválido.');
     return digits;
   }
 
@@ -1176,7 +1263,7 @@ export class FornecedorService {
     const texto = this.textoOpt(valor, false);
     if (!texto) return null;
     const digits = texto.replace(/\D/g, '');
-    if (digits.length !== 14) throw new BadRequestException('cnpj invalido.');
+    if (digits.length !== 14) throw new BadRequestException('CNPJ inválido.');
     return digits;
   }
 
@@ -1188,7 +1275,7 @@ export class FornecedorService {
   private estadoOpt(valor: string | null | undefined) {
     const estado = this.textoOpt(valor, true);
     if (!estado) return null;
-    if (estado.length !== 2) throw new BadRequestException('estado invalido.');
+    if (estado.length !== 2) throw new BadRequestException('Estado inválido.');
     return estado;
   }
 
@@ -1196,7 +1283,7 @@ export class FornecedorService {
     const texto = this.textoOpt(valor, false);
     if (!texto) return null;
     const digits = texto.replace(/\D/g, '');
-    if (digits.length !== 8) throw new BadRequestException('cep invalido.');
+    if (digits.length !== 8) throw new BadRequestException('CEP inválido.');
     return digits;
   }
 
@@ -1247,10 +1334,10 @@ export class FornecedorService {
       if (erroPg.code === '23503') {
         if (acao === 'remover') {
           throw new BadRequestException(
-            'Fornecedor possui registros vinculados e nao pode ser excluido. Altere o status para Inativo.',
+            'Fornecedor possui registros vinculados e não pode ser excluído. Altere o status para Inativo.',
           );
         }
-        throw new BadRequestException('Registro relacionado nao encontrado para a operacao.');
+        throw new BadRequestException('Registro relacionado não encontrado para a operação.');
       }
       if (erroPg.code === '23505') {
         const detalhe =
@@ -1260,7 +1347,7 @@ export class FornecedorService {
         if (detalhe.includes('cnpj')) {
           if (possuiEscopoEmpresa) {
             throw new BadRequestException(
-              'Ja existe fornecedor com este CNPJ na empresa logada.',
+              'Já existe fornecedor com este CNPJ na empresa logada.',
             );
           }
           throw new BadRequestException(
@@ -1271,7 +1358,7 @@ export class FornecedorService {
         if (detalhe.includes('cpf')) {
           if (possuiEscopoEmpresa) {
             throw new BadRequestException(
-              'Ja existe fornecedor com este CPF na empresa logada.',
+              'Já existe fornecedor com este CPF na empresa logada.',
             );
           }
           throw new BadRequestException(
@@ -1282,13 +1369,13 @@ export class FornecedorService {
         throw new BadRequestException('Ja existe um registro igual para os dados informados.');
       }
       if (erroPg.code === '23514') {
-        throw new BadRequestException('Dados invalidos para fornecedor, contato ou endereco.');
+        throw new BadRequestException('Dados inválidos para fornecedor, contato ou endereço.');
       }
       if (erroPg.code === '22P02' || erroPg.code === '22007') {
-        throw new BadRequestException('Formato de numero ou data invalido.');
+        throw new BadRequestException('Formato de número ou data inválido.');
       }
       if (erroPg.code === '23502') {
-        throw new BadRequestException('Campos obrigatorios nao foram informados.');
+        throw new BadRequestException('Campos obrigatórios não foram informados.');
       }
       if (erroPg.code === '42501') {
         throw new BadRequestException(
@@ -1304,7 +1391,7 @@ export class FornecedorService {
       }
     }
 
-    throw new BadRequestException(`Nao foi possivel ${acao} fornecedor neste momento.`);
+      throw new BadRequestException(`Não foi possível ${acao} fornecedor neste momento.`);
   }
 
   private async executarComRls<T>(

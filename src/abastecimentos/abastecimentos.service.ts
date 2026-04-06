@@ -221,12 +221,14 @@ export class AbastecimentosService {
         OFFSET $${valores.length + 2}
       `;
 
-      const [countRows, registros] = await Promise.all([
-        manager.query(sqlCount, valores) as Promise<Array<{ total: number }>>,
-        manager.query(sqlDados, [...valores, limite, offset]) as Promise<
-          RegistroBanco[]
-        >,
-      ]);
+      const countRows = (await manager.query(sqlCount, valores)) as Array<{
+        total: number;
+      }>;
+      const registros = (await manager.query(sqlDados, [
+        ...valores,
+        limite,
+        offset,
+      ])) as RegistroBanco[];
 
       const total = Number(countRows[0]?.total ?? 0);
       const dados = registros.map((registro) =>

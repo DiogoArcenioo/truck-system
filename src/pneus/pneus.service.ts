@@ -224,25 +224,24 @@ export class PneusService {
         ${whereSql}
       `;
 
-      const [countRows, rows] = await Promise.all([
-        manager.query(`SELECT COUNT(1)::int AS total ${sqlBase}`, valores) as Promise<
-          Array<{ total?: unknown }>
-        >,
-        manager.query(
-          `
-          SELECT
-            p.*,
-            pv.id_veiculo AS id_veiculo_atual,
-            pv.posicao AS posicao_atual,
-            v.placa AS placa_veiculo_atual
-          ${sqlBase}
-          ORDER BY ${ordenarPor} ${ordem}, p.id_pneu DESC
-          LIMIT $${valores.length + 1}
-          OFFSET $${valores.length + 2}
-          `,
-          [...valores, limite, offset],
-        ) as Promise<RegistroBanco[]>,
-      ]);
+      const countRows = (await manager.query(
+        `SELECT COUNT(1)::int AS total ${sqlBase}`,
+        valores,
+      )) as Array<{ total?: unknown }>;
+      const rows = (await manager.query(
+        `
+        SELECT
+          p.*,
+          pv.id_veiculo AS id_veiculo_atual,
+          pv.posicao AS posicao_atual,
+          v.placa AS placa_veiculo_atual
+        ${sqlBase}
+        ORDER BY ${ordenarPor} ${ordem}, p.id_pneu DESC
+        LIMIT $${valores.length + 1}
+        OFFSET $${valores.length + 2}
+        `,
+        [...valores, limite, offset],
+      )) as RegistroBanco[];
 
       const total = this.toNumber(countRows[0]?.total) ?? 0;
       return {
@@ -265,27 +264,25 @@ export class PneusService {
 
   async listarOpcoes(idEmpresa: number) {
     return this.executarComRls(idEmpresa, async (manager) => {
-      const [veiculosRows, resumoRows] = await Promise.all([
-        manager.query(
-          `
-          SELECT id_veiculo, placa, status
-          FROM app.veiculo
-          WHERE id_empresa = $1
-          ORDER BY placa ASC
-          `,
-          [idEmpresa],
-        ) as Promise<RegistroBanco[]>,
-        manager.query(
-          `
-          SELECT status_local, COUNT(1)::int AS total
-          FROM app.pneus
-          WHERE id_empresa = $1
-            AND ativo = true
-          GROUP BY status_local
-          `,
-          [idEmpresa],
-        ) as Promise<RegistroBanco[]>,
-      ]);
+      const veiculosRows = (await manager.query(
+        `
+        SELECT id_veiculo, placa, status
+        FROM app.veiculo
+        WHERE id_empresa = $1
+        ORDER BY placa ASC
+        `,
+        [idEmpresa],
+      )) as RegistroBanco[];
+      const resumoRows = (await manager.query(
+        `
+        SELECT status_local, COUNT(1)::int AS total
+        FROM app.pneus
+        WHERE id_empresa = $1
+          AND ativo = true
+        GROUP BY status_local
+        `,
+        [idEmpresa],
+      )) as RegistroBanco[];
 
       const resumo: Record<StatusLocalPneu, number> = {
         ESTOQUE: 0,

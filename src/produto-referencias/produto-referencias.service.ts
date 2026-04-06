@@ -10,44 +10,42 @@ export class ProdutoReferenciasService {
 
   async listarTodos(idEmpresa: number) {
     return this.executarComRls(idEmpresa, async (manager) => {
-      const [gruposRows, subgruposRows, unidadesRows, marcasRows] = await Promise.all([
-        manager.query(
-          `
-            SELECT id_grupo_produto, descricao, situacao
-            FROM app.grupo_produto
-            WHERE id_empresa = $1
-            ORDER BY descricao ASC, id_grupo_produto ASC
-          `,
-          [String(idEmpresa)],
-        ) as Promise<RegistroBanco[]>,
-        manager.query(
-          `
-            SELECT id_subgrupo, id_grupo_produto, descricao, situacao
-            FROM app.subgrupo_produto
-            WHERE id_empresa = $1
-            ORDER BY descricao ASC, id_subgrupo ASC
-          `,
-          [String(idEmpresa)],
-        ) as Promise<RegistroBanco[]>,
-        manager.query(
-          `
-            SELECT id_un, tipo_un, descricao, situacao
-            FROM app.un_produto
-            WHERE id_empresa = $1
-            ORDER BY descricao ASC, id_un ASC
-          `,
-          [String(idEmpresa)],
-        ) as Promise<RegistroBanco[]>,
-        manager.query(
-          `
-            SELECT id_marca, descricao, situacao
-            FROM app.marca_produto
-            WHERE id_empresa = $1
-            ORDER BY descricao ASC, id_marca ASC
-          `,
-          [String(idEmpresa)],
-        ) as Promise<RegistroBanco[]>,
-      ]);
+      const gruposRows = (await manager.query(
+        `
+          SELECT id_grupo_produto, descricao, situacao
+          FROM app.grupo_produto
+          WHERE id_empresa = $1
+          ORDER BY descricao ASC, id_grupo_produto ASC
+        `,
+        [String(idEmpresa)],
+      )) as RegistroBanco[];
+      const subgruposRows = (await manager.query(
+        `
+          SELECT id_subgrupo, id_grupo_produto, descricao, situacao
+          FROM app.subgrupo_produto
+          WHERE id_empresa = $1
+          ORDER BY descricao ASC, id_subgrupo ASC
+        `,
+        [String(idEmpresa)],
+      )) as RegistroBanco[];
+      const unidadesRows = (await manager.query(
+        `
+          SELECT id_un, tipo_un, descricao, situacao
+          FROM app.un_produto
+          WHERE id_empresa = $1
+          ORDER BY descricao ASC, id_un ASC
+        `,
+        [String(idEmpresa)],
+      )) as RegistroBanco[];
+      const marcasRows = (await manager.query(
+        `
+          SELECT id_marca, descricao, situacao
+          FROM app.marca_produto
+          WHERE id_empresa = $1
+          ORDER BY descricao ASC, id_marca ASC
+        `,
+        [String(idEmpresa)],
+      )) as RegistroBanco[];
 
       return {
         sucesso: true,

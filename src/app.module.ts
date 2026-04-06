@@ -16,6 +16,7 @@ import { HealthController } from './health/health.controller';
 import { MarcaVeiculoModule } from './marca-veiculo/marca-veiculo.module';
 import { ModeloVeiculoModule } from './modelo-veiculo/modelo-veiculo.module';
 import { MotoristasModule } from './motoristas/motoristas.module';
+import { MultasModule } from './multas/multas.module';
 import { OrdemServicoModule } from './ordem-servico/ordem-servico.module';
 import { ProdutoModule } from './produto/produto.module';
 import { ProdutoReferenciasModule } from './produto-referencias/produto-referencias.module';
@@ -76,6 +77,7 @@ import { ViagensModule } from './viagens/viagens.module';
     ModeloVeiculoModule,
     VeiculoModule,
     MotoristasModule,
+    MultasModule,
     ViagensModule,
     PneusModule,
     ProdutoModule,

@@ -46,6 +46,8 @@ export class ListarFornecedorDto {
   atualizadoEm!: string | null;
   qtdContatos!: number;
   qtdEnderecos!: number;
+  resumoContato!: string | null;
+  resumoEndereco!: string | null;
   contatos?: ListarFornecedorContatoDto[];
   enderecos?: ListarFornecedorEnderecoDto[];
 }

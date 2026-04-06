@@ -301,10 +301,8 @@ export class VeiculoService {
         OFFSET $${valores.length + 2}
       `;
 
-      const [countRows, rows] = await Promise.all([
-        manager.query(sqlCount, valores),
-        manager.query(sqlDados, [...valores, limite, offset]),
-      ]);
+      const countRows = await manager.query(sqlCount, valores);
+      const rows = await manager.query(sqlDados, [...valores, limite, offset]);
 
       const total = Number(countRows[0]?.total ?? 0);
       const veiculos = rows.map((row) => this.mapearRegistro(row, colunas));

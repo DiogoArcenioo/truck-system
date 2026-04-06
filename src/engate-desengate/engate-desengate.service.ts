@@ -179,10 +179,8 @@ export class EngateDesengateService {
         OFFSET $${valores.length + 2}
       `;
 
-      const [countRows, registros] = await Promise.all([
-        manager.query(sqlCount, valores),
-        manager.query(sqlDados, [...valores, limite, offset]),
-      ]);
+      const countRows = await manager.query(sqlCount, valores);
+      const registros = await manager.query(sqlDados, [...valores, limite, offset]);
 
       const movimentos = registros.map((registro) =>
         this.mapearRegistro(registro, colunas),
@@ -850,10 +848,11 @@ export class EngateDesengateService {
       ${colunas.idEmpresa ? 'WHERE id_empresa = $1' : ''}
     `;
 
-    const [, rowsVeiculos] = await Promise.all([
-      manager.query(sqlHistorico, valores),
-      manager.query(sqlVeiculos, colunas.idEmpresa ? [String(idEmpresa)] : []),
-    ]);
+    await manager.query(sqlHistorico, valores);
+    const rowsVeiculos = await manager.query(
+      sqlVeiculos,
+      colunas.idEmpresa ? [String(idEmpresa)] : [],
+    );
 
     const placaPrincipalPorId = new Map<number, string>();
     const placaPorVeiculoId = new Map<string, number>();

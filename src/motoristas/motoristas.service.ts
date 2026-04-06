@@ -6,13 +6,34 @@ import { configurarContextoEmpresaRls } from '../common/database/rls.util';
 import { AtualizarMotoristaDto } from './dto/atualizar-motorista.dto';
 import { CriarMotoristaDto } from './dto/criar-motorista.dto';
 import { FiltroMotoristasDto } from './dto/filtro-motoristas.dto';
-import { ListarMotoristaDto } from './dto/listar-motorista.dto';
+import {
+  ListarMotoristaDto,
+  ListarMotoristaEnderecoDto,
+} from './dto/listar-motorista.dto';
+import {
+  AtualizarMotoristaEnderecoDto,
+  CriarMotoristaEnderecoDto,
+} from './dto/motorista-endereco.dto';
 import { MotoristaEntity } from './entities/motorista.entity';
 import {
   CATEGORIAS_CNH_OPCOES,
   STATUS_MOTORISTA_LABEL_POR_CODIGO,
   STATUS_MOTORISTA_OPCOES,
 } from './motoristas.constants';
+
+type RegistroBanco = Record<string, unknown>;
+
+type PayloadEnderecoMotorista = {
+  logradouro: string;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  estado: string | null;
+  cep: string | null;
+  principal: boolean;
+  usuarioAtualizacao: string;
+};
 
 @Injectable()
 export class MotoristasService {
@@ -30,15 +51,18 @@ export class MotoristasService {
   }
 
   async listarTodos(idEmpresa: number) {
-    return this.executarComRls(idEmpresa, async (motoristaRepository) => {
+    return this.executarComRls(idEmpresa, async (motoristaRepository, manager) => {
       const motoristas = await motoristaRepository.find({
         where: { idEmpresa: String(idEmpresa) },
         order: { nome: 'ASC', idMotorista: 'ASC' },
       });
 
-      const dados = motoristas.map((motorista) =>
-        this.mapearMotorista(motorista),
-      );
+      const dados: ListarMotoristaDto[] = [];
+
+      for (const motorista of motoristas) {
+        const qtdEnderecos = await this.contarEnderecos(manager, motorista.idMotorista);
+        dados.push(this.mapearMotorista(motorista, qtdEnderecos));
+      }
 
       return {
         sucesso: true,
@@ -51,7 +75,7 @@ export class MotoristasService {
   async listarComFiltro(idEmpresa: number, filtro: FiltroMotoristasDto) {
     this.validarIntervalosDoFiltro(filtro);
 
-    return this.executarComRls(idEmpresa, async (motoristaRepository) => {
+    return this.executarComRls(idEmpresa, async (motoristaRepository, manager) => {
       const pagina = filtro.pagina ?? 1;
       const limite = filtro.limite ?? 20;
       const offset = (pagina - 1) * limite;
@@ -71,7 +95,12 @@ export class MotoristasService {
         .take(limite);
 
       const [motoristas, total] = await query.getManyAndCount();
-      const dados = motoristas.map((motorista) => this.mapearMotorista(motorista));
+      const dados: ListarMotoristaDto[] = [];
+
+      for (const motorista of motoristas) {
+        const qtdEnderecos = await this.contarEnderecos(manager, motorista.idMotorista);
+        dados.push(this.mapearMotorista(motorista, qtdEnderecos));
+      }
 
       return {
         sucesso: true,
@@ -85,7 +114,7 @@ export class MotoristasService {
   }
 
   async buscarPorId(idEmpresa: number, idMotorista: number) {
-    return this.executarComRls(idEmpresa, async (motoristaRepository) => {
+    return this.executarComRls(idEmpresa, async (motoristaRepository, manager) => {
       const motorista = await motoristaRepository.findOne({
         where: { idEmpresa: String(idEmpresa), idMotorista },
       });
@@ -94,9 +123,11 @@ export class MotoristasService {
         throw new NotFoundException('Motorista nao encontrado para a empresa logada.');
       }
 
+      const enderecos = await this.listarEnderecosMotorista(manager, idEmpresa, idMotorista);
+
       return {
         sucesso: true,
-        motorista: this.mapearMotorista(motorista),
+        motorista: this.mapearMotorista(motorista, enderecos.length, enderecos),
       };
     });
   }
@@ -276,6 +307,175 @@ export class MotoristasService {
     }
   }
 
+  async adicionarEndereco(
+    idEmpresa: number,
+    idMotorista: number,
+    dados: CriarMotoristaEnderecoDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (motoristaRepository, manager) => {
+        await this.buscarMotoristaOuFalhar(motoristaRepository, idEmpresa, idMotorista);
+        const payload = this.normalizarEnderecoCriacao(dados, usuarioJwt);
+
+        const rows = (await manager.query(
+          `
+            INSERT INTO app.motorista_enderecos (
+              id_motorista, id_empresa, logradouro, numero, complemento, bairro, cidade,
+              estado, cep, principal, usuario_atualizacao, criado_em, atualizado_em
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW())
+            RETURNING id_endereco
+          `,
+          [
+            idMotorista,
+            String(idEmpresa),
+            payload.logradouro,
+            payload.numero,
+            payload.complemento,
+            payload.bairro,
+            payload.cidade,
+            payload.estado,
+            payload.cep,
+            payload.principal,
+            payload.usuarioAtualizacao,
+          ],
+        )) as Array<{ id_endereco?: string | number }>;
+
+        const idEndereco = this.converterNumero(rows[0]?.id_endereco);
+        if (!idEndereco) {
+          throw new BadRequestException('Falha ao cadastrar endereco do motorista.');
+        }
+
+        if (payload.principal) {
+          await this.marcarEnderecoPrincipal(manager, idMotorista, idEndereco);
+        } else {
+          await this.garantirEnderecoPrincipal(manager, idMotorista);
+        }
+
+        return {
+          sucesso: true,
+          mensagem: 'Endereco cadastrado com sucesso.',
+          motorista: await this.carregarMotoristaCompleto(
+            motoristaRepository,
+            manager,
+            idEmpresa,
+            idMotorista,
+          ),
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error, 'cadastrar endereco');
+    }
+  }
+
+  async atualizarEndereco(
+    idEmpresa: number,
+    idMotorista: number,
+    idEndereco: number,
+    dados: AtualizarMotoristaEnderecoDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (motoristaRepository, manager) => {
+        await this.buscarMotoristaOuFalhar(motoristaRepository, idEmpresa, idMotorista);
+        const atual = await this.buscarEnderecoOuFalhar(manager, idEmpresa, idMotorista, idEndereco);
+        const payload = this.normalizarEnderecoAtualizacao(dados, usuarioJwt, atual);
+
+        await manager.query(
+          `
+            UPDATE app.motorista_enderecos
+            SET
+              logradouro = $1,
+              numero = $2,
+              complemento = $3,
+              bairro = $4,
+              cidade = $5,
+              estado = $6,
+              cep = $7,
+              principal = $8,
+              usuario_atualizacao = $9,
+              atualizado_em = NOW()
+            WHERE id_motorista = $10
+              AND id_empresa = $11
+              AND id_endereco = $12
+          `,
+          [
+            payload.logradouro,
+            payload.numero,
+            payload.complemento,
+            payload.bairro,
+            payload.cidade,
+            payload.estado,
+            payload.cep,
+            payload.principal,
+            payload.usuarioAtualizacao,
+            idMotorista,
+            String(idEmpresa),
+            idEndereco,
+          ],
+        );
+
+        if (payload.principal) {
+          await this.marcarEnderecoPrincipal(manager, idMotorista, idEndereco);
+        } else {
+          await this.garantirEnderecoPrincipal(manager, idMotorista);
+        }
+
+        return {
+          sucesso: true,
+          mensagem: 'Endereco atualizado com sucesso.',
+          motorista: await this.carregarMotoristaCompleto(
+            motoristaRepository,
+            manager,
+            idEmpresa,
+            idMotorista,
+          ),
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error, 'atualizar endereco');
+    }
+  }
+
+  async removerEndereco(
+    idEmpresa: number,
+    idMotorista: number,
+    idEndereco: number,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (motoristaRepository, manager) => {
+        await this.buscarMotoristaOuFalhar(motoristaRepository, idEmpresa, idMotorista);
+        await this.buscarEnderecoOuFalhar(manager, idEmpresa, idMotorista, idEndereco);
+
+        await manager.query(
+          `
+            DELETE FROM app.motorista_enderecos
+            WHERE id_motorista = $1
+              AND id_empresa = $2
+              AND id_endereco = $3
+          `,
+          [idMotorista, String(idEmpresa), idEndereco],
+        );
+
+        await this.garantirEnderecoPrincipal(manager, idMotorista);
+
+        return {
+          sucesso: true,
+          mensagem: 'Endereco removido com sucesso.',
+          motorista: await this.carregarMotoristaCompleto(
+            motoristaRepository,
+            manager,
+            idEmpresa,
+            idMotorista,
+          ),
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error, 'remover endereco');
+    }
+  }
+
   private async executarComRls<T>(
     idEmpresa: number,
     callback: (
@@ -362,6 +562,133 @@ export class MotoristasService {
         'Filtro invalido: validadeAte deve ser maior ou igual a validadeDe.',
       );
     }
+  }
+
+  private async carregarMotoristaCompleto(
+    motoristaRepository: Repository<MotoristaEntity>,
+    manager: EntityManager,
+    idEmpresa: number,
+    idMotorista: number,
+  ) {
+    const motorista = await this.buscarMotoristaOuFalhar(
+      motoristaRepository,
+      idEmpresa,
+      idMotorista,
+    );
+    const enderecos = await this.listarEnderecosMotorista(manager, idEmpresa, idMotorista);
+    return this.mapearMotorista(motorista, enderecos.length, enderecos);
+  }
+
+  private async buscarMotoristaOuFalhar(
+    motoristaRepository: Repository<MotoristaEntity>,
+    idEmpresa: number,
+    idMotorista: number,
+  ) {
+    const motorista = await motoristaRepository.findOne({
+      where: { idEmpresa: String(idEmpresa), idMotorista },
+    });
+
+    if (!motorista) {
+      throw new NotFoundException('Motorista nao encontrado para a empresa logada.');
+    }
+
+    return motorista;
+  }
+
+  private async listarEnderecosMotorista(
+    manager: EntityManager,
+    idEmpresa: number,
+    idMotorista: number,
+  ): Promise<ListarMotoristaEnderecoDto[]> {
+    const rows = (await manager.query(
+      `
+        SELECT *
+        FROM app.motorista_enderecos
+        WHERE id_motorista = $1
+          AND id_empresa = $2
+        ORDER BY principal DESC, id_endereco ASC
+      `,
+      [idMotorista, String(idEmpresa)],
+    )) as RegistroBanco[];
+
+    return rows.map((row) => this.mapearEndereco(row));
+  }
+
+  private async contarEnderecos(manager: EntityManager, idMotorista: number) {
+    const rows = (await manager.query(
+      `
+        SELECT COUNT(1)::int AS total
+        FROM app.motorista_enderecos
+        WHERE id_motorista = $1
+      `,
+      [idMotorista],
+    )) as Array<{ total?: number | string }>;
+
+    return this.converterNumero(rows[0]?.total) ?? 0;
+  }
+
+  private async buscarEnderecoOuFalhar(
+    manager: EntityManager,
+    idEmpresa: number,
+    idMotorista: number,
+    idEndereco: number,
+  ) {
+    const rows = (await manager.query(
+      `
+        SELECT *
+        FROM app.motorista_enderecos
+        WHERE id_motorista = $1
+          AND id_empresa = $2
+          AND id_endereco = $3
+        LIMIT 1
+      `,
+      [idMotorista, String(idEmpresa), idEndereco],
+    )) as RegistroBanco[];
+
+    if (!rows[0]) {
+      throw new NotFoundException('Endereco do motorista nao encontrado.');
+    }
+
+    return rows[0];
+  }
+
+  private async marcarEnderecoPrincipal(
+    manager: EntityManager,
+    idMotorista: number,
+    idEnderecoPrincipal: number,
+  ) {
+    await manager.query(
+      `
+        UPDATE app.motorista_enderecos
+        SET principal = CASE WHEN id_endereco = $2 THEN true ELSE false END,
+            atualizado_em = NOW()
+        WHERE id_motorista = $1
+      `,
+      [idMotorista, idEnderecoPrincipal],
+    );
+  }
+
+  private async garantirEnderecoPrincipal(manager: EntityManager, idMotorista: number) {
+    const rows = (await manager.query(
+      `
+        SELECT id_endereco, principal
+        FROM app.motorista_enderecos
+        WHERE id_motorista = $1
+        ORDER BY principal DESC, id_endereco ASC
+      `,
+      [idMotorista],
+    )) as Array<{ id_endereco?: number | string; principal?: boolean }>;
+
+    if (rows.length === 0 || rows.some((row) => row.principal === true)) {
+      return;
+    }
+
+    const primeiro = this.converterNumero(rows[0]?.id_endereco);
+    if (!primeiro) {
+      return;
+    }
+
+    await this.marcarEnderecoPrincipal(manager, idMotorista, primeiro);
   }
 
   private resolverColunaOrdenacao(
@@ -465,6 +792,90 @@ export class MotoristasService {
     }
 
     return upperCase ? texto.toUpperCase() : texto.toLowerCase();
+  }
+
+  private normalizarUsuario(valor: string | undefined) {
+    const texto = (valor ?? '').trim().toUpperCase();
+    return texto || 'APP_WEB';
+  }
+
+  private normalizarEnderecoCriacao(
+    dados: CriarMotoristaEnderecoDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ): PayloadEnderecoMotorista {
+    return {
+      logradouro: this.normalizarTexto(dados.logradouro),
+      numero: this.normalizarTextoOpcional(dados.numero, 'numero'),
+      complemento: this.normalizarTextoOpcional(dados.complemento, 'complemento'),
+      bairro: this.normalizarTextoOpcional(dados.bairro, 'bairro'),
+      cidade: this.normalizarTextoOpcional(dados.cidade, 'cidade'),
+      estado: this.normalizarEstadoOpcional(dados.estado),
+      cep: this.normalizarCepOpcional(dados.cep),
+      principal: dados.principal ?? false,
+      usuarioAtualizacao: this.normalizarUsuario(usuarioJwt.email),
+    };
+  }
+
+  private normalizarEnderecoAtualizacao(
+    dados: AtualizarMotoristaEnderecoDto,
+    usuarioJwt: JwtUsuarioPayload,
+    atual: RegistroBanco,
+  ): PayloadEnderecoMotorista {
+    return {
+      logradouro:
+        dados.logradouro !== undefined
+          ? this.normalizarTexto(dados.logradouro)
+          : this.normalizarTexto(String(atual.logradouro ?? '')),
+      numero:
+        dados.numero !== undefined
+          ? this.normalizarTextoOpcional(dados.numero, 'numero')
+          : this.normalizarTextoOpcional(this.str(atual.numero), 'numero'),
+      complemento:
+        dados.complemento !== undefined
+          ? this.normalizarTextoOpcional(dados.complemento, 'complemento')
+          : this.normalizarTextoOpcional(this.str(atual.complemento), 'complemento'),
+      bairro:
+        dados.bairro !== undefined
+          ? this.normalizarTextoOpcional(dados.bairro, 'bairro')
+          : this.normalizarTextoOpcional(this.str(atual.bairro), 'bairro'),
+      cidade:
+        dados.cidade !== undefined
+          ? this.normalizarTextoOpcional(dados.cidade, 'cidade')
+          : this.normalizarTextoOpcional(this.str(atual.cidade), 'cidade'),
+      estado:
+        dados.estado !== undefined
+          ? this.normalizarEstadoOpcional(dados.estado)
+          : this.normalizarEstadoOpcional(this.str(atual.estado)),
+      cep:
+        dados.cep !== undefined
+          ? this.normalizarCepOpcional(dados.cep)
+          : this.normalizarCepOpcional(this.str(atual.cep)),
+      principal: dados.principal ?? this.bool(atual.principal) ?? false,
+      usuarioAtualizacao: this.normalizarUsuario(usuarioJwt.email),
+    };
+  }
+
+  private normalizarEstadoOpcional(valor: string | null | undefined) {
+    const estado = this.normalizarTextoOpcional(valor, 'estado');
+    if (!estado) {
+      return null;
+    }
+    if (estado.length !== 2) {
+      throw new BadRequestException('Estado invalido.');
+    }
+    return estado;
+  }
+
+  private normalizarCepOpcional(valor: string | null | undefined) {
+    const texto = this.normalizarTextoOpcional(valor, 'cep', false);
+    if (!texto) {
+      return null;
+    }
+    const digitos = texto.replace(/\D/g, '');
+    if (digitos.length !== 8) {
+      throw new BadRequestException('CEP invalido.');
+    }
+    return digitos;
   }
 
   private normalizarData(valor: string): string {
@@ -629,7 +1040,11 @@ export class MotoristasService {
     return valor instanceof Date ? valor.toISOString().slice(0, 10) : `${valor}`;
   }
 
-  private mapearMotorista(motorista: MotoristaEntity): ListarMotoristaDto {
+  private mapearMotorista(
+    motorista: MotoristaEntity,
+    qtdEnderecos = 0,
+    enderecos?: ListarMotoristaEnderecoDto[],
+  ): ListarMotoristaDto {
     const statusNormalizado = (motorista.status ?? '').trim().toUpperCase();
     const validadeCnh = this.formatarDataOpcional(motorista.validadeCnh as unknown as string | Date);
 
@@ -652,7 +1067,57 @@ export class MotoristasService {
         STATUS_MOTORISTA_LABEL_POR_CODIGO[
           statusNormalizado as keyof typeof STATUS_MOTORISTA_LABEL_POR_CODIGO
         ] ?? statusNormalizado,
+      qtdEnderecos,
+      enderecos,
     };
+  }
+
+  private mapearEndereco(row: RegistroBanco): ListarMotoristaEnderecoDto {
+    return {
+      idEndereco: this.converterNumero(row.id_endereco) ?? 0,
+      idMotorista: this.converterNumero(row.id_motorista) ?? 0,
+      logradouro: this.str(row.logradouro) ?? '',
+      numero: this.str(row.numero),
+      complemento: this.str(row.complemento),
+      bairro: this.str(row.bairro),
+      cidade: this.str(row.cidade),
+      estado: this.str(row.estado),
+      cep: this.str(row.cep),
+      principal: this.bool(row.principal) ?? false,
+      usuarioAtualizacao: this.str(row.usuario_atualizacao),
+      criadoEm: this.formatarDataOpcional(row.criado_em as string | Date | null | undefined) || null,
+      atualizadoEm: this.formatarDataOpcional(row.atualizado_em as string | Date | null | undefined) || null,
+    };
+  }
+
+  private str(valor: unknown) {
+    if (typeof valor !== 'string') {
+      return null;
+    }
+    const texto = valor.trim();
+    return texto || null;
+  }
+
+  private converterNumero(valor: unknown) {
+    if (valor === null || valor === undefined) {
+      return null;
+    }
+    const numero = Number(valor);
+    return Number.isFinite(numero) ? numero : null;
+  }
+
+  private bool(valor: unknown): boolean | null {
+    if (typeof valor === 'boolean') return valor;
+    if (typeof valor === 'string') {
+      const normalizado = valor.trim().toLowerCase();
+      if (normalizado === 'true' || normalizado === 't' || normalizado === '1') return true;
+      if (normalizado === 'false' || normalizado === 'f' || normalizado === '0') return false;
+    }
+    if (typeof valor === 'number') {
+      if (valor === 1) return true;
+      if (valor === 0) return false;
+    }
+    return null;
   }
 
   private tratarErroPersistencia(error: unknown, acao: string): never {

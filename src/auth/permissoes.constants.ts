@@ -30,6 +30,7 @@ export const MODULOS_SISTEMA = [
   'viagens',
   'abastecimentos',
   'despesas',
+  'multas',
   'motoristas',
   'produtos',
   'fornecedores',
@@ -89,6 +90,10 @@ const moduloMetadata: Record<ModuloSistema, Omit<ModuloMetadata, 'id'>> = {
   despesas: {
     label: 'Despesas',
     descricao: 'Lancamentos de pedagio, multa, alimentacao e custos da viagem.',
+  },
+  multas: {
+    label: 'Multas',
+    descricao: 'Lancamento e acompanhamento de multas da frota.',
   },
   motoristas: {
     label: 'Motoristas',
@@ -159,6 +164,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
       despesas: acessoTotal,
+      multas: acessoTotal,
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,
@@ -175,6 +181,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
       despesas: acessoTotal,
+      multas: acessoTotal,
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,
@@ -191,6 +198,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       viagens: acessoTotal,
       abastecimentos: acessoTotal,
       despesas: acessoTotal,
+      multas: acessoTotal,
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,

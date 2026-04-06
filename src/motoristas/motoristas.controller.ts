@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpException,
   InternalServerErrorException,
@@ -19,6 +20,10 @@ import { QueryFailedError } from 'typeorm';
 import { AtualizarMotoristaDto } from './dto/atualizar-motorista.dto';
 import { CriarMotoristaDto } from './dto/criar-motorista.dto';
 import { FiltroMotoristasDto } from './dto/filtro-motoristas.dto';
+import {
+  AtualizarMotoristaEnderecoDto,
+  CriarMotoristaEnderecoDto,
+} from './dto/motorista-endereco.dto';
 import { MotoristasService } from './motoristas.service';
 
 type RequisicaoAutenticada = {
@@ -119,6 +124,52 @@ export class MotoristasController {
         `Falha inesperada ao atualizar motorista. DEBUG: ${detalhe}`,
       );
     }
+  }
+
+  @Post(':idMotorista/enderecos')
+  async adicionarEndereco(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idMotorista', ParseIntPipe) idMotorista: number,
+    @Body() dados: CriarMotoristaEnderecoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.motoristasService.adicionarEndereco(
+      usuario.idEmpresa,
+      idMotorista,
+      dados,
+      usuario,
+    );
+  }
+
+  @Put(':idMotorista/enderecos/:idEndereco')
+  async atualizarEndereco(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idMotorista', ParseIntPipe) idMotorista: number,
+    @Param('idEndereco', ParseIntPipe) idEndereco: number,
+    @Body() dados: AtualizarMotoristaEnderecoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.motoristasService.atualizarEndereco(
+      usuario.idEmpresa,
+      idMotorista,
+      idEndereco,
+      dados,
+      usuario,
+    );
+  }
+
+  @Delete(':idMotorista/enderecos/:idEndereco')
+  async removerEndereco(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idMotorista', ParseIntPipe) idMotorista: number,
+    @Param('idEndereco', ParseIntPipe) idEndereco: number,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.motoristasService.removerEndereco(
+      usuario.idEmpresa,
+      idMotorista,
+      idEndereco,
+    );
   }
 
   private obterUsuarioAutenticado(
