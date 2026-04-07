@@ -34,6 +34,7 @@ export const MODULOS_SISTEMA = [
   'motoristas',
   'produtos',
   'fornecedores',
+  'cancelamentos',
   'relatorios',
   'usuarios',
 ] as const;
@@ -107,6 +108,11 @@ const moduloMetadata: Record<ModuloSistema, Omit<ModuloMetadata, 'id'>> = {
     label: 'Fornecedores',
     descricao: 'Cadastro, contatos e enderecos de fornecedores.',
   },
+  cancelamentos: {
+    label: 'Cancelamentos',
+    descricao:
+      'Reabertura controlada de documentos finalizados com registro de auditoria.',
+  },
   relatorios: {
     label: 'Relatorios',
     descricao: 'Painel analitico e consolidacao de dados.',
@@ -168,6 +174,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,
+      cancelamentos: acessoTotal,
       relatorios: acessoTotal,
       usuarios: acessoTotal,
     }),
@@ -185,6 +192,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,
+      cancelamentos: acessoTotal,
       relatorios: acessoTotal,
       usuarios: semAcesso,
     }),
@@ -202,6 +210,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,
+      cancelamentos: semAcesso,
       relatorios: semAcesso,
       usuarios: semAcesso,
     }),

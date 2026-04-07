@@ -8,6 +8,7 @@ import { AssinaturaAcessoInterceptor } from './auth/interceptors/assinatura-aces
 import { AbastecimentosModule } from './abastecimentos/abastecimentos.module';
 import { CombustiveisModule } from './combustiveis/combustiveis.module';
 import { CorVeiculoModule } from './cor-veiculo/cor-veiculo.module';
+import { CancelamentosModule } from './cancelamentos/cancelamentos.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DespesasModule } from './despesas/despesas.module';
 import { EngateDesengateModule } from './engate-desengate/engate-desengate.module';
@@ -88,6 +89,7 @@ import { ViagensModule } from './viagens/viagens.module';
     DashboardModule,
     EngateDesengateModule,
     DespesasModule,
+    CancelamentosModule,
   ],
   controllers: [HealthController],
   providers: [

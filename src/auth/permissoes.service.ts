@@ -139,6 +139,10 @@ const ROTAS_SISTEMA_POR_MODULO: Array<{
     prefixos: ['/api/fornecedor', '/api/sistema/fornecedor'],
     modulos: ['fornecedores'],
   },
+  {
+    prefixos: ['/api/cancelamentos', '/api/sistema/cancelamentos'],
+    modulos: ['cancelamentos'],
+  },
   { prefixos: ['/api/produto', '/api/sistema/produto'], modulos: ['produtos'] },
   {
     prefixos: ['/api/produto-referencias', '/api/sistema/produto-referencias'],
