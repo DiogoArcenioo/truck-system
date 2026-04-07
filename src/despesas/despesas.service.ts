@@ -1560,7 +1560,7 @@ export class DespesasService {
     filtros.push(`id_empresa = $${valores.length}`);
 
     const sql = `
-      SELECT id_veiculo, id_motorista
+      SELECT id_veiculo, id_motorista, status, data_fim
       FROM app.viagens
       WHERE ${filtros.join(' AND ')}
       LIMIT 1
@@ -1571,6 +1571,15 @@ export class DespesasService {
     if (!registro) {
       throw new BadRequestException(
         `Viagem #${idViagem} nao encontrada para a empresa logada.`,
+      );
+    }
+
+    const statusViagem =
+      this.converterTexto(registro.status)?.toUpperCase() ?? '';
+    const dataFimViagem = this.converterData(registro.data_fim);
+    if (statusViagem !== 'A' || dataFimViagem !== null) {
+      throw new BadRequestException(
+        `Viagem #${idViagem} encerrada. Vinculo de despesa permitido apenas para viagem aberta (status='A' e dataFim nula).`,
       );
     }
 

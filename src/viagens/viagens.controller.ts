@@ -42,6 +42,12 @@ export class ViagensController {
     return this.viagensService.listarComFiltro(usuario.idEmpresa, filtro);
   }
 
+  @Get('vinculaveis-despesa')
+  async listarVinculaveisDespesa(@Req() request: RequisicaoAutenticada) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.viagensService.listarVinculaveisDespesa(usuario.idEmpresa);
+  }
+
   @Get(':idViagem')
   async buscarPorId(
     @Req() request: RequisicaoAutenticada,

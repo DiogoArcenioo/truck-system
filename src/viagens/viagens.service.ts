@@ -5,7 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Not, QueryFailedError, Repository } from 'typeorm';
+import {
+  EntityManager,
+  IsNull,
+  Not,
+  QueryFailedError,
+  Repository,
+} from 'typeorm';
 import { configurarContextoEmpresaRls } from '../common/database/rls.util';
 import { JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { AtualizarViagemDto } from './dto/atualizar-viagem.dto';
@@ -62,6 +68,32 @@ export class ViagensService {
     return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
       const viagens = await viagemRepository.find({
         where: { idEmpresa: String(idEmpresa), status: Not('I') },
+        order: { dataInicio: 'DESC', idViagem: 'DESC' },
+      });
+      const pesoPorViagem = await this.carregarMapaPesoViagens(
+        manager,
+        idEmpresa,
+        viagens.map((viagem) => viagem.idViagem),
+      );
+
+      return {
+        sucesso: true,
+        total: viagens.length,
+        viagens: viagens.map((viagem) =>
+          this.mapearViagem(viagem, pesoPorViagem.get(viagem.idViagem) ?? null),
+        ),
+      };
+    });
+  }
+
+  async listarVinculaveisDespesa(idEmpresa: number) {
+    return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
+      const viagens = await viagemRepository.find({
+        where: {
+          idEmpresa: String(idEmpresa),
+          status: 'A',
+          dataFim: IsNull(),
+        },
         order: { dataInicio: 'DESC', idViagem: 'DESC' },
       });
       const pesoPorViagem = await this.carregarMapaPesoViagens(
@@ -255,7 +287,11 @@ export class ViagensService {
         idEmpresa,
         idViagem,
       );
-      const peso = await this.carregarPesoDaViagem(manager, idEmpresa, idViagem);
+      const peso = await this.carregarPesoDaViagem(
+        manager,
+        idEmpresa,
+        idViagem,
+      );
 
       return {
         sucesso: true,
@@ -279,51 +315,54 @@ export class ViagensService {
     });
 
     try {
-      return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
-        const viagem = await viagemRepository.save(
-          viagemRepository.create({
-            idEmpresa: String(idEmpresa),
-            idVeiculo: payload.idVeiculo,
-            idMotorista: payload.idMotorista,
-            dataInicio: payload.dataInicio,
-            dataFim: payload.dataFim,
-            kmInicial: payload.kmInicial,
-            kmFinal: payload.kmFinal,
-            status: payload.status,
-            observacao: payload.observacao,
-            valorFrete: payload.valorFrete,
-            media: payload.media,
-            totalDespesas: payload.totalDespesas,
-            totalAbastecimentos: payload.totalAbastecimentos,
-            totalKm: payload.totalKm,
-            totalLucro: payload.totalLucro,
-            usuarioAtualizacao:
+      return this.executarComRls(
+        idEmpresa,
+        async (viagemRepository, manager) => {
+          const viagem = await viagemRepository.save(
+            viagemRepository.create({
+              idEmpresa: String(idEmpresa),
+              idVeiculo: payload.idVeiculo,
+              idMotorista: payload.idMotorista,
+              dataInicio: payload.dataInicio,
+              dataFim: payload.dataFim,
+              kmInicial: payload.kmInicial,
+              kmFinal: payload.kmFinal,
+              status: payload.status,
+              observacao: payload.observacao,
+              valorFrete: payload.valorFrete,
+              media: payload.media,
+              totalDespesas: payload.totalDespesas,
+              totalAbastecimentos: payload.totalAbastecimentos,
+              totalKm: payload.totalKm,
+              totalLucro: payload.totalLucro,
+              usuarioAtualizacao:
+                payload.usuarioAtualizacao ??
+                this.normalizarUsuarioAtualizacao(usuarioJwt.email),
+            }),
+          );
+          if (payload.peso !== undefined) {
+            await this.atualizarPesoViagem(
+              manager,
+              idEmpresa,
+              viagem.idViagem,
+              payload.peso,
               payload.usuarioAtualizacao ??
-              this.normalizarUsuarioAtualizacao(usuarioJwt.email),
-          }),
-        );
-        if (payload.peso !== undefined) {
-          await this.atualizarPesoViagem(
+                this.normalizarUsuarioAtualizacao(usuarioJwt.email),
+            );
+          }
+          const peso = await this.carregarPesoDaViagem(
             manager,
             idEmpresa,
             viagem.idViagem,
-            payload.peso,
-            payload.usuarioAtualizacao ??
-              this.normalizarUsuarioAtualizacao(usuarioJwt.email),
           );
-        }
-        const peso = await this.carregarPesoDaViagem(
-          manager,
-          idEmpresa,
-          viagem.idViagem,
-        );
 
-        return {
-          sucesso: true,
-          mensagem: 'Viagem cadastrada com sucesso.',
-          viagem: this.mapearViagem(viagem, peso ?? null),
-        };
-      });
+          return {
+            sucesso: true,
+            mensagem: 'Viagem cadastrada com sucesso.',
+            viagem: this.mapearViagem(viagem, peso ?? null),
+          };
+        },
+      );
     } catch (error) {
       this.tratarErroPersistencia(error, 'cadastrar');
     }
@@ -336,67 +375,74 @@ export class ViagensService {
     usuarioJwt: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
-        const viagemAtual = await this.buscarViagemPorIdOuFalhar(
-          viagemRepository,
-          idEmpresa,
-          idViagem,
-        );
-        const payload = this.normalizarAtualizacao(dados);
+      return this.executarComRls(
+        idEmpresa,
+        async (viagemRepository, manager) => {
+          const viagemAtual = await this.buscarViagemPorIdOuFalhar(
+            viagemRepository,
+            idEmpresa,
+            idViagem,
+          );
+          const payload = this.normalizarAtualizacao(dados);
 
-        const dataInicio = payload.dataInicio ?? viagemAtual.dataInicio;
-        const dataFim =
-          payload.dataFim !== undefined ? payload.dataFim : viagemAtual.dataFim;
-        const kmInicial = payload.kmInicial ?? viagemAtual.kmInicial;
-        const kmFinal =
-          payload.kmFinal !== undefined ? payload.kmFinal : viagemAtual.kmFinal;
+          const dataInicio = payload.dataInicio ?? viagemAtual.dataInicio;
+          const dataFim =
+            payload.dataFim !== undefined
+              ? payload.dataFim
+              : viagemAtual.dataFim;
+          const kmInicial = payload.kmInicial ?? viagemAtual.kmInicial;
+          const kmFinal =
+            payload.kmFinal !== undefined
+              ? payload.kmFinal
+              : viagemAtual.kmFinal;
 
-        this.validarConsistenciaDaViagem({
-          dataInicio,
-          dataFim,
-          kmInicial,
-          kmFinal,
-          peso: payload.peso,
-        });
+          this.validarConsistenciaDaViagem({
+            dataInicio,
+            dataFim,
+            kmInicial,
+            kmFinal,
+            peso: payload.peso,
+          });
 
-        const { peso: _pesoIgnorado, ...payloadSemPeso } = payload;
-        await viagemRepository.update(
-          { idViagem, idEmpresa: String(idEmpresa) },
-          {
-            ...payloadSemPeso,
-            usuarioAtualizacao:
+          const { peso: _pesoIgnorado, ...payloadSemPeso } = payload;
+          await viagemRepository.update(
+            { idViagem, idEmpresa: String(idEmpresa) },
+            {
+              ...payloadSemPeso,
+              usuarioAtualizacao:
+                payload.usuarioAtualizacao ??
+                this.normalizarUsuarioAtualizacao(usuarioJwt.email),
+            },
+          );
+          if (payload.peso !== undefined) {
+            await this.atualizarPesoViagem(
+              manager,
+              idEmpresa,
+              idViagem,
+              payload.peso,
               payload.usuarioAtualizacao ??
-              this.normalizarUsuarioAtualizacao(usuarioJwt.email),
-          },
-        );
-        if (payload.peso !== undefined) {
-          await this.atualizarPesoViagem(
+                this.normalizarUsuarioAtualizacao(usuarioJwt.email),
+            );
+          }
+
+          const viagemAtualizada = await this.buscarViagemPorIdOuFalhar(
+            viagemRepository,
+            idEmpresa,
+            idViagem,
+          );
+          const pesoAtualizado = await this.carregarPesoDaViagem(
             manager,
             idEmpresa,
             idViagem,
-            payload.peso,
-            payload.usuarioAtualizacao ??
-              this.normalizarUsuarioAtualizacao(usuarioJwt.email),
           );
-        }
 
-        const viagemAtualizada = await this.buscarViagemPorIdOuFalhar(
-          viagemRepository,
-          idEmpresa,
-          idViagem,
-        );
-        const pesoAtualizado = await this.carregarPesoDaViagem(
-          manager,
-          idEmpresa,
-          idViagem,
-        );
-
-        return {
-          sucesso: true,
-          mensagem: 'Viagem atualizada com sucesso.',
-          viagem: this.mapearViagem(viagemAtualizada, pesoAtualizado ?? null),
-        };
-      });
+          return {
+            sucesso: true,
+            mensagem: 'Viagem atualizada com sucesso.',
+            viagem: this.mapearViagem(viagemAtualizada, pesoAtualizado ?? null),
+          };
+        },
+      );
     } catch (error) {
       this.tratarErroPersistencia(error, 'atualizar');
     }
@@ -621,7 +667,10 @@ export class ViagensService {
       );
     }
 
-    if (params.peso !== undefined && (!Number.isFinite(params.peso) || params.peso < 0)) {
+    if (
+      params.peso !== undefined &&
+      (!Number.isFinite(params.peso) || params.peso < 0)
+    ) {
       throw new BadRequestException('peso invalido.');
     }
   }
@@ -689,7 +738,7 @@ export class ViagensService {
   }
 
   private async colunaPesoExiste(manager: EntityManager): Promise<boolean> {
-    const rows = (await manager.query(
+    const rows = await manager.query(
       `
       SELECT 1
       FROM information_schema.columns
@@ -698,7 +747,7 @@ export class ViagensService {
         AND column_name = 'peso'
       LIMIT 1
       `,
-    )) as Array<Record<string, unknown>>;
+    );
     return rows.length > 0;
   }
 
@@ -717,7 +766,7 @@ export class ViagensService {
       return mapa;
     }
 
-    const rows = (await manager.query(
+    const rows = await manager.query(
       `
       SELECT id_viagem, peso
       FROM app.viagens
@@ -725,14 +774,17 @@ export class ViagensService {
         AND id_viagem = ANY($2::int[])
       `,
       [String(idEmpresa), idsViagem],
-    )) as Array<{ id_viagem?: unknown; peso?: unknown }>;
+    );
 
     rows.forEach((row) => {
       const idViagem = Number(row.id_viagem);
       if (!Number.isFinite(idViagem)) {
         return;
       }
-      mapa.set(idViagem, this.converterNumero(row.peso as string | number | null));
+      mapa.set(
+        idViagem,
+        this.converterNumero(row.peso as string | number | null),
+      );
     });
 
     return mapa;
@@ -748,7 +800,7 @@ export class ViagensService {
       return null;
     }
 
-    const rows = (await manager.query(
+    const rows = await manager.query(
       `
       SELECT peso
       FROM app.viagens
@@ -757,9 +809,11 @@ export class ViagensService {
       LIMIT 1
       `,
       [String(idEmpresa), idViagem],
-    )) as Array<{ peso?: unknown }>;
+    );
 
-    return this.converterNumero((rows[0]?.peso as string | number | null) ?? null);
+    return this.converterNumero(
+      (rows[0]?.peso as string | number | null) ?? null,
+    );
   }
 
   private async atualizarPesoViagem(
