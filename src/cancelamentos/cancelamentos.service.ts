@@ -157,22 +157,13 @@ export class CancelamentosService {
           'usuarioAtualizacao',
         );
 
-        const rows = (await manager.query(
-          `
-            INSERT INTO app.cancelamento_motivos (
-              id_empresa,
-              codigo,
-              descricao,
-              ativo,
-              usuario_atualizacao,
-              criado_em,
-              atualizado_em
-            )
-            VALUES ($1, $2, $3, TRUE, $4, NOW(), NOW())
-            RETURNING *
-          `,
-          [idEmpresa, codigo, descricao, usuarioAtualizacao],
-        )) as RegistroBanco[];
+        const rows = await this.inserirMotivoComFallbackSequencia(
+          manager,
+          idEmpresa,
+          codigo,
+          descricao,
+          usuarioAtualizacao,
+        );
 
         const row = rows[0];
         if (!row) {
@@ -899,43 +890,13 @@ export class CancelamentosService {
       detalhes: documento.detalhes,
     };
 
-    const rows = (await manager.query(
-      `
-        INSERT INTO app.cancelamento_documentos (
-          id_empresa,
-          tipo_documento,
-          id_documento,
-          id_motivo,
-          motivo_descricao,
-          usuario_cancelamento,
-          usuario_solicitante,
-          observacao,
-          status_anterior,
-          status_novo,
-          data_cancelamento,
-          referencia_documento_json,
-          criado_em
-        )
-        VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::timestamptz, $12::jsonb, NOW()
-        )
-        RETURNING *
-      `,
-      [
-        String(idEmpresa),
-        documento.tipoDocumento,
-        documento.idDocumento,
-        dados.idMotivo,
-        dados.motivoDescricao,
-        dados.usuarioCancelamento,
-        dados.usuarioSolicitante,
-        dados.observacao,
-        dados.statusAnterior,
-        dados.statusNovo,
-        dados.dataCancelamento,
-        JSON.stringify(referenciaDocumento),
-      ],
-    )) as RegistroBanco[];
+    const rows = await this.inserirHistoricoComFallbackSequencia(
+      manager,
+      String(idEmpresa),
+      documento,
+      dados,
+      referenciaDocumento,
+    );
 
     if (!rows[0]) {
       throw new BadRequestException('Nao foi possivel registrar o cancelamento.');
@@ -989,6 +950,200 @@ export class CancelamentosService {
     const tipo = TIPOS_DOCUMENTO_CANCELAMENTO.find((item) => item.value === tipoDocumento);
     return tipo?.label ?? tipoDocumento;
   }
+
+  private async inserirMotivoComFallbackSequencia(
+    manager: EntityManager,
+    idEmpresa: number,
+    codigo: string | null,
+    descricao: string,
+    usuarioAtualizacao: string,
+  ): Promise<RegistroBanco[]> {
+    try {
+      return (await manager.query(
+        `
+          INSERT INTO app.cancelamento_motivos (
+            id_empresa,
+            codigo,
+            descricao,
+            ativo,
+            usuario_atualizacao,
+            criado_em,
+            atualizado_em
+          )
+          VALUES ($1, $2, $3, TRUE, $4, NOW(), NOW())
+          RETURNING *
+        `,
+        [idEmpresa, codigo, descricao, usuarioAtualizacao],
+      )) as RegistroBanco[];
+    } catch (error) {
+      if (
+        !this.isErroPermissaoSequence(
+          error,
+          'cancelamento_motivos_id_motivo_seq',
+        )
+      ) {
+        throw error;
+      }
+
+      const proximoId = await this.obterProximoIdSemSequence(
+        manager,
+        'app.cancelamento_motivos',
+        'id_motivo',
+        'app.cancelamento_motivos:id_motivo',
+      );
+
+      return (await manager.query(
+        `
+          INSERT INTO app.cancelamento_motivos (
+            id_motivo,
+            id_empresa,
+            codigo,
+            descricao,
+            ativo,
+            usuario_atualizacao,
+            criado_em,
+            atualizado_em
+          )
+          VALUES ($1, $2, $3, $4, TRUE, $5, NOW(), NOW())
+          RETURNING *
+        `,
+        [proximoId, idEmpresa, codigo, descricao, usuarioAtualizacao],
+      )) as RegistroBanco[];
+    }
+  }
+
+  private async inserirHistoricoComFallbackSequencia(
+    manager: EntityManager,
+    idEmpresa: string,
+    documento: DocumentoConsultado,
+    dados: {
+      idMotivo: number | null;
+      motivoDescricao: string;
+      usuarioCancelamento: string;
+      usuarioSolicitante: string | null;
+      observacao: string | null;
+      statusAnterior: string;
+      statusNovo: string;
+      dataCancelamento: string;
+    },
+    referenciaDocumento: Record<string, unknown>,
+  ): Promise<RegistroBanco[]> {
+    const parametrosBase = [
+      idEmpresa,
+      documento.tipoDocumento,
+      documento.idDocumento,
+      dados.idMotivo,
+      dados.motivoDescricao,
+      dados.usuarioCancelamento,
+      dados.usuarioSolicitante,
+      dados.observacao,
+      dados.statusAnterior,
+      dados.statusNovo,
+      dados.dataCancelamento,
+      JSON.stringify(referenciaDocumento),
+    ];
+
+    try {
+      return (await manager.query(
+        `
+          INSERT INTO app.cancelamento_documentos (
+            id_empresa,
+            tipo_documento,
+            id_documento,
+            id_motivo,
+            motivo_descricao,
+            usuario_cancelamento,
+            usuario_solicitante,
+            observacao,
+            status_anterior,
+            status_novo,
+            data_cancelamento,
+            referencia_documento_json,
+            criado_em
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::timestamptz, $12::jsonb, NOW()
+          )
+          RETURNING *
+        `,
+        parametrosBase,
+      )) as RegistroBanco[];
+    } catch (error) {
+      if (
+        !this.isErroPermissaoSequence(
+          error,
+          'cancelamento_documentos_id_cancelamento_seq',
+        )
+      ) {
+        throw error;
+      }
+
+      const proximoId = await this.obterProximoIdSemSequence(
+        manager,
+        'app.cancelamento_documentos',
+        'id_cancelamento',
+        'app.cancelamento_documentos:id_cancelamento',
+      );
+
+      return (await manager.query(
+        `
+          INSERT INTO app.cancelamento_documentos (
+            id_cancelamento,
+            id_empresa,
+            tipo_documento,
+            id_documento,
+            id_motivo,
+            motivo_descricao,
+            usuario_cancelamento,
+            usuario_solicitante,
+            observacao,
+            status_anterior,
+            status_novo,
+            data_cancelamento,
+            referencia_documento_json,
+            criado_em
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::timestamptz, $13::jsonb, NOW()
+          )
+          RETURNING *
+        `,
+        [proximoId, ...parametrosBase],
+      )) as RegistroBanco[];
+    }
+  }
+
+  private isErroPermissaoSequence(error: unknown, nomeSequence: string): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+
+    const erroPg = error.driverError as { code?: string; message?: string; detail?: string };
+    if (erroPg.code !== '42501') {
+      return false;
+    }
+
+    const texto = `${erroPg.message ?? ''} ${erroPg.detail ?? ''}`.toLowerCase();
+    return texto.includes('sequence') && texto.includes(nomeSequence.toLowerCase());
+  }
+
+  private async obterProximoIdSemSequence(
+    manager: EntityManager,
+    tabela: string,
+    colunaId: string,
+    chaveLock: string,
+  ): Promise<number> {
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [chaveLock]);
+    const rows = (await manager.query(
+      `SELECT COALESCE(MAX(${colunaId}), 0) + 1 AS proximo_id FROM ${tabela}`,
+    )) as RegistroBanco[];
+    const proximoId = this.toNumber(rows[0]?.proximo_id);
+    if (!proximoId || proximoId <= 0) {
+      throw new BadRequestException('Nao foi possivel gerar identificador para cancelamento.');
+    }
+    return proximoId;
+  }
+
   private async executarComRls<T>(
     idEmpresa: number,
     callback: (manager: EntityManager) => Promise<T>,
@@ -1256,7 +1411,11 @@ export class CancelamentosService {
     }
 
     if (error instanceof QueryFailedError) {
-      const erroPg = error.driverError as { code?: string; message?: string };
+      const erroPg = error.driverError as {
+        code?: string;
+        message?: string;
+        detail?: string;
+      };
       this.logger.error(
         `Falha ao ${acao}. code=${erroPg.code ?? 'N/A'} message=${erroPg.message ?? 'Erro desconhecido'}`,
       );
@@ -1272,8 +1431,14 @@ export class CancelamentosService {
         );
       }
       if (erroPg.code === '42501') {
+        const detalhe = `${erroPg.message ?? ''} ${erroPg.detail ?? ''}`.toLowerCase();
+        if (detalhe.includes('sequence')) {
+          throw new BadRequestException(
+            'Usuario do banco sem permissao na sequence de cancelamentos. Conceda USAGE/SELECT nas sequences app.cancelamento_motivos_id_motivo_seq e app.cancelamento_documentos_id_cancelamento_seq.',
+          );
+        }
         throw new BadRequestException(
-          'Usuario do banco sem permissao para gravar tabelas de cancelamento.',
+          'Usuario do banco sem permissao para gravar tabelas de cancelamento. Conceda INSERT/UPDATE/DELETE nas tabelas app.cancelamento_motivos e app.cancelamento_documentos.',
         );
       }
       if (erroPg.code === '42P01') {
