@@ -959,22 +959,12 @@ export class CancelamentosService {
     usuarioAtualizacao: string,
   ): Promise<RegistroBanco[]> {
     try {
-      return (await manager.query(
-        `
-          INSERT INTO app.cancelamento_motivos (
-            id_empresa,
-            codigo,
-            descricao,
-            ativo,
-            usuario_atualizacao,
-            criado_em,
-            atualizado_em
-          )
-          VALUES ($1, $2, $3, TRUE, $4, NOW(), NOW())
-          RETURNING *
-        `,
-        [idEmpresa, codigo, descricao, usuarioAtualizacao],
-      )) as RegistroBanco[];
+      return await this.executarInsertMotivoDinamico(manager, {
+        idEmpresa,
+        codigo,
+        descricao,
+        usuarioAtualizacao,
+      });
     } catch (error) {
       if (
         !this.isErroPermissaoSequence(
@@ -992,24 +982,112 @@ export class CancelamentosService {
         'app.cancelamento_motivos:id_motivo',
       );
 
-      return (await manager.query(
-        `
-          INSERT INTO app.cancelamento_motivos (
-            id_motivo,
-            id_empresa,
-            codigo,
-            descricao,
-            ativo,
-            usuario_atualizacao,
-            criado_em,
-            atualizado_em
-          )
-          VALUES ($1, $2, $3, $4, TRUE, $5, NOW(), NOW())
-          RETURNING *
-        `,
-        [proximoId, idEmpresa, codigo, descricao, usuarioAtualizacao],
-      )) as RegistroBanco[];
+      return await this.executarInsertMotivoDinamico(manager, {
+        idMotivoManual: proximoId,
+        idEmpresa,
+        codigo,
+        descricao,
+        usuarioAtualizacao,
+      });
     }
+  }
+
+  private async executarInsertMotivoDinamico(
+    manager: EntityManager,
+    dados: {
+      idMotivoManual?: number;
+      idEmpresa: number;
+      codigo: string | null;
+      descricao: string;
+      usuarioAtualizacao: string;
+    },
+  ): Promise<RegistroBanco[]> {
+    const colunas = await this.obterColunasTabela(
+      manager,
+      'app',
+      'cancelamento_motivos',
+    );
+
+    if (!colunas.has('id_empresa') || !colunas.has('descricao')) {
+      throw new BadRequestException(
+        'Estrutura da tabela app.cancelamento_motivos incompleta. Verifique se as colunas id_empresa e descricao existem.',
+      );
+    }
+
+    const campos: string[] = [];
+    const valores: Array<string | number | boolean | null> = [];
+    const expressoesValores: string[] = [];
+
+    const adicionarValor = (
+      campo: string,
+      valor: string | number | boolean | null,
+    ) => {
+      campos.push(campo);
+      valores.push(valor);
+      expressoesValores.push(`$${valores.length}`);
+    };
+
+    const adicionarExpressao = (campo: string, expressao: string) => {
+      campos.push(campo);
+      expressoesValores.push(expressao);
+    };
+
+    if (dados.idMotivoManual !== undefined && colunas.has('id_motivo')) {
+      adicionarValor('id_motivo', dados.idMotivoManual);
+    }
+
+    adicionarValor('id_empresa', dados.idEmpresa);
+    if (colunas.has('codigo')) {
+      adicionarValor('codigo', dados.codigo);
+    }
+    adicionarValor('descricao', dados.descricao);
+
+    if (colunas.has('ativo')) {
+      adicionarValor('ativo', true);
+    }
+    if (colunas.has('usuario_atualizacao')) {
+      adicionarValor('usuario_atualizacao', dados.usuarioAtualizacao);
+    }
+    if (colunas.has('criado_em')) {
+      adicionarExpressao('criado_em', 'NOW()');
+    }
+    if (colunas.has('atualizado_em')) {
+      adicionarExpressao('atualizado_em', 'NOW()');
+    }
+
+    const sql = `
+      INSERT INTO app.cancelamento_motivos (
+        ${campos.join(', ')}
+      )
+      VALUES (
+        ${expressoesValores.join(', ')}
+      )
+      RETURNING *
+    `;
+
+    return (await manager.query(sql, valores)) as RegistroBanco[];
+  }
+
+  private async obterColunasTabela(
+    manager: EntityManager,
+    schema: string,
+    tabela: string,
+  ): Promise<Set<string>> {
+    const rows = (await manager.query(
+      `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = $1
+          AND table_name = $2
+      `,
+      [schema, tabela],
+    )) as RegistroBanco[];
+
+    return new Set(
+      rows
+        .map((row) => this.toText(row.column_name))
+        .filter((value): value is string => Boolean(value)),
+    );
   }
 
   private async inserirHistoricoComFallbackSequencia(
@@ -1124,7 +1202,13 @@ export class CancelamentosService {
     }
 
     const texto = `${erroPg.message ?? ''} ${erroPg.detail ?? ''}`.toLowerCase();
-    return texto.includes('sequence') && texto.includes(nomeSequence.toLowerCase());
+    return (
+      texto.includes(nomeSequence.toLowerCase()) ||
+      texto.includes('_seq') ||
+      texto.includes('sequence') ||
+      texto.includes('sequencia') ||
+      texto.includes('sequência')
+    );
   }
 
   private async obterProximoIdSemSequence(
@@ -1133,7 +1217,11 @@ export class CancelamentosService {
     colunaId: string,
     chaveLock: string,
   ): Promise<number> {
-    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [chaveLock]);
+    const [namespaceLock, idLock] = this.gerarParChaveLock(chaveLock);
+    await manager.query(
+      `SELECT pg_advisory_xact_lock($1::int, $2::int)`,
+      [namespaceLock, idLock],
+    );
     const rows = (await manager.query(
       `SELECT COALESCE(MAX(${colunaId}), 0) + 1 AS proximo_id FROM ${tabela}`,
     )) as RegistroBanco[];
@@ -1142,6 +1230,15 @@ export class CancelamentosService {
       throw new BadRequestException('Nao foi possivel gerar identificador para cancelamento.');
     }
     return proximoId;
+  }
+
+  private gerarParChaveLock(chave: string): [number, number] {
+    let hash = 0;
+    for (let index = 0; index < chave.length; index += 1) {
+      hash = (hash * 31 + chave.charCodeAt(index)) | 0;
+    }
+
+    return [27182, Math.abs(hash)];
   }
 
   private async executarComRls<T>(
@@ -1444,6 +1541,16 @@ export class CancelamentosService {
       if (erroPg.code === '42P01') {
         throw new BadRequestException(
           'Estrutura de cancelamentos nao encontrada no banco.',
+        );
+      }
+      if (erroPg.code === '42703') {
+        throw new BadRequestException(
+          'Estrutura de cancelamentos desatualizada (coluna ausente). Atualize a estrutura das tabelas app.cancelamento_motivos/app.cancelamento_documentos.',
+        );
+      }
+      if (erroPg.code === '42883') {
+        throw new BadRequestException(
+          'Funcao SQL necessaria para controle de cancelamentos nao esta disponivel no banco.',
         );
       }
     }
