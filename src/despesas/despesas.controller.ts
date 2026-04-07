@@ -42,6 +42,12 @@ export class DespesasController {
     return this.despesasService.listarComFiltro(usuario.idEmpresa, filtro);
   }
 
+  @Get('tipos')
+  async listarTipos(@Req() request: RequisicaoAutenticada) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.despesasService.listarTipos(usuario.idEmpresa);
+  }
+
   @Get(':idDespesa')
   async buscarPorId(
     @Req() request: RequisicaoAutenticada,

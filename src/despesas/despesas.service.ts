@@ -65,23 +65,11 @@ type ViagemVinculoResumo = {
   idMotorista: number | null;
 };
 
-type TipoDespesaMeta = {
+type TipoDespesaConfig = {
   codigo: string;
   descricao: string;
   aliases: string[];
 };
-
-const TIPOS_DESPESA: TipoDespesaMeta[] = [
-  { codigo: 'P', descricao: 'Pedagio', aliases: ['P', 'PEDAGIO', 'PEDAGIOS'] },
-  { codigo: 'M', descricao: 'Multa', aliases: ['M', 'MULTA', 'MULTAS'] },
-  {
-    codigo: 'A',
-    descricao: 'Alimentacao',
-    aliases: ['A', 'ALIMENTACAO', 'ALIMENTACAO_MOTORISTA', 'ALIMENTOS'],
-  },
-  { codigo: 'E', descricao: 'Estadia', aliases: ['E', 'ESTADIA', 'HOSPEDAGEM'] },
-  { codigo: 'O', descricao: 'Outros', aliases: ['O', 'OUTRO', 'OUTROS'] },
-];
 
 @Injectable()
 export class DespesasService {
@@ -91,6 +79,7 @@ export class DespesasService {
 
   async listarTodas(idEmpresa: number) {
     return this.executarComRls(idEmpresa, async (manager, colunas) => {
+      const tiposDespesa = await this.carregarTiposDespesa(manager);
       const filtros: string[] = [];
       const valores: Array<string | number | boolean> = [];
 
@@ -118,7 +107,7 @@ export class DespesasService {
 
       const registros = (await manager.query(sql, valores)) as RegistroBanco[];
       const dados = registros.map((registro) =>
-        this.mapearRegistro(registro, colunas),
+        this.mapearRegistro(registro, colunas, tiposDespesa),
       );
 
       return {
@@ -133,6 +122,7 @@ export class DespesasService {
     this.validarIntervalosDoFiltro(filtro);
 
     return this.executarComRls(idEmpresa, async (manager, colunas) => {
+      const tiposDespesa = await this.carregarTiposDespesa(manager);
       const filtros: string[] = [];
       const valores: Array<string | number | boolean> = [];
 
@@ -181,7 +171,10 @@ export class DespesasService {
       }
 
       if (filtro.tipo) {
-        const tiposPesquisa = this.resolverValoresBuscaTipo(filtro.tipo);
+        const tiposPesquisa = this.resolverValoresBuscaTipo(
+          filtro.tipo,
+          tiposDespesa,
+        );
         if (tiposPesquisa.length > 0) {
           const filtrosTipo: string[] = [];
           for (const tipo of tiposPesquisa) {
@@ -270,7 +263,7 @@ export class DespesasService {
 
       const total = Number(countRows[0]?.total ?? 0);
       const dados = registros.map((registro) =>
-        this.mapearRegistro(registro, colunas),
+        this.mapearRegistro(registro, colunas, tiposDespesa),
       );
 
       return {
@@ -284,8 +277,23 @@ export class DespesasService {
     });
   }
 
+  async listarTipos(idEmpresa: number) {
+    return this.executarComRls(idEmpresa, async (manager) => {
+      const tipos = await this.carregarTiposDespesa(manager);
+      return {
+        sucesso: true,
+        total: tipos.length,
+        tipos: tipos.map((tipo) => ({
+          codigo: tipo.codigo,
+          descricao: tipo.descricao,
+        })),
+      };
+    });
+  }
+
   async buscarPorId(idEmpresa: number, idDespesa: number) {
     return this.executarComRls(idEmpresa, async (manager, colunas) => {
+      const tiposDespesa = await this.carregarTiposDespesa(manager);
       const registro = await this.buscarRegistroPorIdOuFalhar(
         manager,
         colunas,
@@ -295,7 +303,7 @@ export class DespesasService {
 
       return {
         sucesso: true,
-        despesa: this.mapearRegistro(registro, colunas),
+        despesa: this.mapearRegistro(registro, colunas, tiposDespesa),
       };
     });
   }
@@ -307,7 +315,12 @@ export class DespesasService {
   ) {
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
-        const payloadBase = this.normalizarCriacao(dados, usuarioJwt);
+        const tiposDespesa = await this.carregarTiposDespesa(manager);
+        const payloadBase = this.normalizarCriacao(
+          dados,
+          usuarioJwt,
+          tiposDespesa,
+        );
         const payload = await this.resolverVinculosDespesa(
           manager,
           colunas,
@@ -368,7 +381,7 @@ export class DespesasService {
           );
         }
 
-        const despesa = this.mapearRegistro(registro, colunas);
+        const despesa = this.mapearRegistro(registro, colunas, tiposDespesa);
         if (despesa.idViagem !== null) {
           await this.recalcularTotaisViagem(
             manager,
@@ -397,14 +410,19 @@ export class DespesasService {
   ) {
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
-        const payload = this.normalizarAtualizacao(dados, usuarioJwt);
+        const tiposDespesa = await this.carregarTiposDespesa(manager);
+        const payload = this.normalizarAtualizacao(
+          dados,
+          usuarioJwt,
+          tiposDespesa,
+        );
         const registroAtual = await this.buscarRegistroPorIdOuFalhar(
           manager,
           colunas,
           idEmpresa,
           idDespesa,
         );
-        const atual = this.mapearRegistro(registroAtual, colunas);
+        const atual = this.mapearRegistro(registroAtual, colunas, tiposDespesa);
 
         const payloadResolvido = await this.resolverVinculosDespesa(
           manager,
@@ -422,9 +440,11 @@ export class DespesasService {
             data: payload.data ?? atual.data,
             tipo: payload.tipo ?? atual.tipo,
             descricao:
-              payload.descricao !== undefined
-                ? payload.descricao
-                : atual.descricao,
+              this.normalizarDescricaoPersistencia(
+                payload.descricao !== undefined
+                  ? payload.descricao
+                  : atual.descricao,
+              ) ?? null,
             valor: payload.valor ?? atual.valor,
             usuarioAtualizacao:
               payload.usuarioAtualizacao ?? this.normalizarUsuario(usuarioJwt.email),
@@ -437,7 +457,11 @@ export class DespesasService {
         const data = payload.data ?? atual.data;
         const tipo = payload.tipo ?? atual.tipo;
         const descricao =
-          payload.descricao !== undefined ? payload.descricao : atual.descricao;
+          this.normalizarDescricaoPersistencia(
+            payload.descricao !== undefined
+              ? payload.descricao
+              : atual.descricao,
+          ) ?? null;
         const valor = payload.valor ?? atual.valor;
         const usuarioAtualizacao =
           payload.usuarioAtualizacao ?? this.normalizarUsuario(usuarioJwt.email);
@@ -510,7 +534,11 @@ export class DespesasService {
           );
         }
 
-        const despesaAtualizada = this.mapearRegistro(registroAtualizado, colunas);
+        const despesaAtualizada = this.mapearRegistro(
+          registroAtualizado,
+          colunas,
+          tiposDespesa,
+        );
         await this.recalcularViagensImpactadas(
           manager,
           idEmpresa,
@@ -532,6 +560,7 @@ export class DespesasService {
 
   async remover(idEmpresa: number, idDespesa: number) {
     return this.executarComRls(idEmpresa, async (manager, colunas) => {
+      const tiposDespesa = await this.carregarTiposDespesa(manager);
       const filtros: string[] = [];
       const valores: Array<string | number> = [];
 
@@ -573,7 +602,11 @@ export class DespesasService {
         );
       }
 
-      const despesaRemovida = this.mapearRegistro(removido, colunas);
+      const despesaRemovida = this.mapearRegistro(
+        removido,
+        colunas,
+        tiposDespesa,
+      );
       if (despesaRemovida.idViagem !== null) {
         await this.recalcularTotaisViagem(
           manager,
@@ -702,6 +735,80 @@ export class DespesasService {
     };
   }
 
+  private async carregarTiposDespesa(
+    manager: EntityManager,
+  ): Promise<TipoDespesaConfig[]> {
+    let rows: Array<{ codigo?: unknown; descricao?: unknown; aliases?: unknown }>;
+
+    try {
+      rows = (await manager.query(`
+        SELECT codigo, descricao, aliases
+        FROM app.tipo_despesas
+        WHERE COALESCE(ativo, true) = true
+        ORDER BY ordem ASC, codigo ASC
+      `)) as Array<{ codigo?: unknown; descricao?: unknown; aliases?: unknown }>;
+    } catch (error) {
+      if (error instanceof QueryFailedError) {
+        const erroPg = error.driverError as { code?: string };
+        if (erroPg.code === '42P01') {
+          throw new BadRequestException('Tabela app.tipo_despesas nao encontrada.');
+        }
+      }
+      throw error;
+    }
+
+    const tipos: TipoDespesaConfig[] = [];
+    for (const row of rows) {
+      const codigoRaw = this.converterTexto(row.codigo);
+      if (!codigoRaw) {
+        continue;
+      }
+
+      const codigo = this.normalizarTextoBusca(codigoRaw);
+      if (!codigo) {
+        continue;
+      }
+
+      const descricao = this.converterTexto(row.descricao) ?? codigo;
+      const aliases = this.normalizarAliasesTipo(row.aliases, codigo, descricao);
+      tipos.push({ codigo, descricao, aliases });
+    }
+
+    if (tipos.length === 0) {
+      throw new BadRequestException(
+        'Tabela app.tipo_despesas sem tipos de despesa ativos.',
+      );
+    }
+
+    return tipos;
+  }
+
+  private normalizarAliasesTipo(
+    aliasesOriginais: unknown,
+    codigo: string,
+    descricao: string,
+  ) {
+    const aliases: string[] = [codigo, descricao];
+
+    if (Array.isArray(aliasesOriginais)) {
+      for (const item of aliasesOriginais) {
+        if (typeof item === 'string') {
+          aliases.push(item);
+        }
+      }
+    } else if (typeof aliasesOriginais === 'string' && aliasesOriginais.trim()) {
+      aliases.push(aliasesOriginais);
+    }
+
+    return Array.from(
+      new Set(
+        aliases
+          .map((item) => this.normalizarTextoBusca(item))
+          .filter((item) => item.length > 0),
+      ),
+    );
+  }
+
   private encontrarColuna(
     set: Set<string>,
     candidatas: string[],
@@ -759,14 +866,15 @@ export class DespesasService {
   private normalizarCriacao(
     dados: CriarDespesaDto,
     usuarioJwt: JwtUsuarioPayload,
+    tiposDespesa: TipoDespesaConfig[],
   ): DespesaPersistencia {
     return {
       idVeiculo: dados.idVeiculo ?? null,
       idMotorista: dados.idMotorista ?? null,
       idViagem: dados.idViagem ?? null,
       data: new Date(dados.data),
-      tipo: this.normalizarTipoPersistencia(dados.tipo),
-      descricao: dados.descricao?.trim() ? dados.descricao.trim().toUpperCase() : null,
+      tipo: this.normalizarTipoPersistencia(dados.tipo, tiposDespesa),
+      descricao: this.normalizarDescricaoPersistencia(dados.descricao) ?? null,
       valor: dados.valor,
       usuarioAtualizacao: dados.usuarioAtualizacao?.trim()
         ? this.normalizarUsuario(dados.usuarioAtualizacao)
@@ -777,6 +885,7 @@ export class DespesasService {
   private normalizarAtualizacao(
     dados: AtualizarDespesaDto,
     usuarioJwt: JwtUsuarioPayload,
+    tiposDespesa: TipoDespesaConfig[],
   ) {
     const idViagemNormalizada = dados.idViagem === null ? null : dados.idViagem;
     const idVeiculoNormalizado = dados.idVeiculo === null ? null : dados.idVeiculo;
@@ -792,14 +901,9 @@ export class DespesasService {
       data: dados.data !== undefined ? new Date(dados.data) : undefined,
       tipo:
         dados.tipo !== undefined
-          ? this.normalizarTipoPersistencia(dados.tipo)
+          ? this.normalizarTipoPersistencia(dados.tipo, tiposDespesa)
           : undefined,
-      descricao:
-        dados.descricao !== undefined
-          ? dados.descricao && dados.descricao.trim()
-            ? dados.descricao.trim().toUpperCase()
-            : null
-          : undefined,
+      descricao: this.normalizarDescricaoPersistencia(dados.descricao),
       valor: dados.valor,
       usuarioAtualizacao:
         dados.usuarioAtualizacao !== undefined
@@ -924,9 +1028,10 @@ export class DespesasService {
   private mapearRegistro(
     registro: RegistroBanco,
     colunas: MapaColunasDespesa,
+    tiposDespesa: TipoDespesaConfig[],
   ): DespesaNormalizada {
     const tipoRaw = this.converterTexto(registro[colunas.tipo]) ?? 'O';
-    const tipo = this.normalizarTipoRetorno(tipoRaw);
+    const tipo = this.normalizarTipoRetorno(tipoRaw, tiposDespesa);
     return {
       idDespesa: this.converterNumero(registro[colunas.idDespesa]) ?? 0,
       idEmpresa:
@@ -952,7 +1057,7 @@ export class DespesasService {
             : true,
       data: this.converterData(registro[colunas.data]) ?? new Date(0),
       tipo,
-      tipoDescricao: this.descreverTipo(tipo, tipoRaw),
+      tipoDescricao: this.descreverTipo(tipo, tipoRaw, tiposDespesa),
       descricao:
         colunas.descricao !== null
           ? this.converterTexto(registro[colunas.descricao])
@@ -977,16 +1082,23 @@ export class DespesasService {
     };
   }
 
-  private resolverValoresBuscaTipo(valor: string) {
+  private resolverValoresBuscaTipo(
+    valor: string,
+    tiposDespesa: TipoDespesaConfig[],
+  ) {
     const chave = this.normalizarTextoBusca(valor);
     if (!chave) {
       return [];
     }
 
-    for (const tipo of TIPOS_DESPESA) {
-      if (tipo.aliases.some((alias) => this.normalizarTextoBusca(alias) === chave)) {
-        return Array.from(new Set([tipo.codigo, ...tipo.aliases]));
+    const tipo = this.buscarTipoPorValor(chave, tiposDespesa);
+    if (tipo) {
+      const termos = new Set<string>();
+      termos.add(tipo.codigo);
+      for (const alias of tipo.aliases) {
+        termos.add(this.normalizarTextoBusca(alias));
       }
+      return Array.from(termos);
     }
 
     if (chave.length === 1) {
@@ -996,43 +1108,102 @@ export class DespesasService {
     return [valor.trim()];
   }
 
-  private normalizarTipoPersistencia(valor: string) {
-    const chave = this.normalizarTextoBusca(valor);
-    for (const tipo of TIPOS_DESPESA) {
-      if (tipo.aliases.some((alias) => this.normalizarTextoBusca(alias) === chave)) {
-        return tipo.codigo;
-      }
+  private normalizarDescricaoPersistencia(valor?: string | null) {
+    if (valor === undefined) {
+      return undefined;
     }
 
-    return chave.length > 0 ? chave.slice(0, 1) : 'O';
+    if (valor === null) {
+      return null;
+    }
+
+    const texto = valor.trim();
+    if (!texto) {
+      return null;
+    }
+
+    return texto.toUpperCase();
   }
 
-  private normalizarTipoRetorno(valor: string) {
-    const chave = this.normalizarTextoBusca(valor);
-    if (!chave) {
-      return 'O';
+  private normalizarTipoPersistencia(
+    valor: string,
+    tiposDespesa: TipoDespesaConfig[],
+  ) {
+    const tipo = this.buscarTipoPorValor(valor, tiposDespesa);
+    if (tipo) {
+      return tipo.codigo;
     }
 
-    for (const tipo of TIPOS_DESPESA) {
-      if (tipo.codigo === chave) {
-        return tipo.codigo;
-      }
-      if (tipo.aliases.some((alias) => this.normalizarTextoBusca(alias) === chave)) {
-        return tipo.codigo;
-      }
+    const chave = this.normalizarTextoBusca(valor);
+    if (!chave) {
+      const tipoOutros = tiposDespesa.find((item) => item.codigo === 'O');
+      return tipoOutros?.codigo ?? 'O';
+    }
+
+    throw new BadRequestException('tipo da despesa invalido.');
+  }
+
+  private normalizarTipoRetorno(
+    valor: string,
+    tiposDespesa: TipoDespesaConfig[],
+  ) {
+    const tipo = this.buscarTipoPorValor(valor, tiposDespesa);
+    if (tipo) {
+      return tipo.codigo;
+    }
+
+    const chave = this.normalizarTextoBusca(valor);
+    if (!chave) {
+      const tipoOutros = tiposDespesa.find((item) => item.codigo === 'O');
+      return tipoOutros?.codigo ?? 'O';
     }
 
     return chave.slice(0, 1);
   }
 
-  private descreverTipo(codigo: string, valorOriginal?: string | null) {
-    const meta = TIPOS_DESPESA.find((item) => item.codigo === codigo);
-    if (meta) {
-      return meta.descricao;
+  private descreverTipo(
+    codigo: string,
+    valorOriginal: string | null | undefined,
+    tiposDespesa: TipoDespesaConfig[],
+  ) {
+    const chaveCodigo = this.normalizarTextoBusca(codigo);
+    const tipoPorCodigo = tiposDespesa.find((item) => item.codigo === chaveCodigo);
+    if (tipoPorCodigo) {
+      return tipoPorCodigo.descricao;
+    }
+
+    const tipoPorValorOriginal = this.buscarTipoPorValor(
+      valorOriginal ?? '',
+      tiposDespesa,
+    );
+    if (tipoPorValorOriginal) {
+      return tipoPorValorOriginal.descricao;
     }
 
     const texto = (valorOriginal ?? '').trim();
     return texto || 'Outros';
+  }
+
+  private buscarTipoPorValor(
+    valor: string,
+    tiposDespesa: TipoDespesaConfig[],
+  ): TipoDespesaConfig | null {
+    const chave = this.normalizarTextoBusca(valor);
+    if (!chave) {
+      return null;
+    }
+
+    for (const tipo of tiposDespesa) {
+      if (tipo.codigo === chave) {
+        return tipo;
+      }
+
+      if (tipo.aliases.some((alias) => this.normalizarTextoBusca(alias) === chave)) {
+        return tipo;
+      }
+    }
+
+    return null;
   }
 
   private normalizarTextoBusca(valor: string) {
