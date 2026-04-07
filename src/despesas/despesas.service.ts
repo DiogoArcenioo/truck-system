@@ -83,7 +83,7 @@ const TIPOS_DESPESA_PADRAO: TipoDespesaConfig[] = [
   {
     codigo: 'P',
     descricao: 'PEDAGIO',
-    aliases: ['P', 'PEDAGIO', 'PEDAGIOS'],
+    aliases: ['P', 'PEDAGIO', 'PEDAGIOS', 'M'],
   },
   {
     codigo: 'A',
@@ -93,7 +93,7 @@ const TIPOS_DESPESA_PADRAO: TipoDespesaConfig[] = [
   {
     codigo: 'E',
     descricao: 'ESTADIA',
-    aliases: ['E', 'ESTADIA', 'HOSPEDAGEM'],
+    aliases: ['E', 'ESTADIA', 'HOSPEDAGEM', 'H'],
   },
   {
     codigo: 'L',
@@ -353,10 +353,15 @@ export class DespesasService {
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
         const tiposDespesa = await this.carregarTiposDespesa(manager);
+        const codigosTipoPermitidos = await this.carregarCodigosTipoPermitidos(
+          manager,
+          colunas.tipo,
+        );
         const payloadBase = this.normalizarCriacao(
           dados,
           usuarioJwt,
           tiposDespesa,
+          codigosTipoPermitidos,
         );
         const payload = await this.resolverVinculosDespesa(
           manager,
@@ -448,10 +453,15 @@ export class DespesasService {
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
         const tiposDespesa = await this.carregarTiposDespesa(manager);
+        const codigosTipoPermitidos = await this.carregarCodigosTipoPermitidos(
+          manager,
+          colunas.tipo,
+        );
         const payload = this.normalizarAtualizacao(
           dados,
           usuarioJwt,
           tiposDespesa,
+          codigosTipoPermitidos,
         );
         const registroAtual = await this.buscarRegistroPorIdOuFalhar(
           manager,
@@ -881,6 +891,63 @@ export class DespesasService {
     };
   }
 
+  private async carregarCodigosTipoPermitidos(
+    manager: EntityManager,
+    colunaTipo: string,
+  ): Promise<Set<string> | null> {
+    const dominioRows = (await manager.query(
+      `
+      SELECT domain_name
+      FROM information_schema.columns
+      WHERE table_schema = 'app'
+        AND table_name = 'despesas'
+        AND column_name = $1
+      LIMIT 1
+    `,
+      [colunaTipo],
+    )) as Array<{ domain_name?: unknown }>;
+
+    const nomeDominio = this.converterTexto(dominioRows[0]?.domain_name);
+    if (!nomeDominio) {
+      return null;
+    }
+
+    const restricoes = (await manager.query(
+      `
+      SELECT pg_get_constraintdef(c.oid) AS definicao
+      FROM pg_constraint c
+      JOIN pg_type t ON t.oid = c.contypid
+      JOIN pg_namespace n ON n.oid = t.typnamespace
+      WHERE n.nspname = 'app'
+        AND t.typname = $1
+        AND c.contype = 'c'
+    `,
+      [nomeDominio],
+    )) as Array<{ definicao?: unknown }>;
+
+    if (restricoes.length === 0) {
+      return null;
+    }
+
+    const codigos = new Set<string>();
+    for (const item of restricoes) {
+      const definicao = this.converterTexto(item.definicao);
+      if (!definicao) {
+        continue;
+      }
+
+      const matches = definicao.matchAll(/'([^']+)'::/g);
+      for (const match of matches) {
+        const codigo = this.normalizarTextoBusca(match[1]);
+        if (codigo.length > 0) {
+          codigos.add(codigo);
+        }
+      }
+    }
+
+    return codigos.size > 0 ? codigos : null;
+  }
+
   private normalizarAliasesTipo(
     aliasesOriginais: unknown,
     codigo: string,
@@ -1026,13 +1093,18 @@ export class DespesasService {
     dados: CriarDespesaDto,
     usuarioJwt: JwtUsuarioPayload,
     tiposDespesa: TipoDespesaConfig[],
+    codigosTipoPermitidos: Set<string> | null,
   ): DespesaPersistencia {
     return {
       idVeiculo: dados.idVeiculo ?? null,
       idMotorista: dados.idMotorista ?? null,
       idViagem: dados.idViagem ?? null,
       data: new Date(dados.data),
-      tipo: this.normalizarTipoPersistencia(dados.tipo, tiposDespesa),
+      tipo: this.normalizarTipoPersistencia(
+        dados.tipo,
+        tiposDespesa,
+        codigosTipoPermitidos,
+      ),
       descricao: this.normalizarDescricaoPersistencia(dados.descricao) ?? null,
       valor: dados.valor,
       usuarioAtualizacao: dados.usuarioAtualizacao?.trim()
@@ -1045,6 +1117,7 @@ export class DespesasService {
     dados: AtualizarDespesaDto,
     usuarioJwt: JwtUsuarioPayload,
     tiposDespesa: TipoDespesaConfig[],
+    codigosTipoPermitidos: Set<string> | null,
   ) {
     const idViagemNormalizada = dados.idViagem === null ? null : dados.idViagem;
     const idVeiculoNormalizado = dados.idVeiculo === null ? null : dados.idVeiculo;
@@ -1060,7 +1133,11 @@ export class DespesasService {
       data: dados.data !== undefined ? new Date(dados.data) : undefined,
       tipo:
         dados.tipo !== undefined
-          ? this.normalizarTipoPersistencia(dados.tipo, tiposDespesa)
+          ? this.normalizarTipoPersistencia(
+              dados.tipo,
+              tiposDespesa,
+              codigosTipoPermitidos,
+            )
           : undefined,
       descricao: this.normalizarDescricaoPersistencia(dados.descricao),
       valor: dados.valor,
@@ -1287,26 +1364,67 @@ export class DespesasService {
   private normalizarTipoPersistencia(
     valor: string,
     tiposDespesa: TipoDespesaConfig[],
+    codigosTipoPermitidos: Set<string> | null,
   ) {
     const tipo = this.buscarTipoPorValor(valor, tiposDespesa);
     if (tipo) {
-      return tipo.codigo;
+      return this.resolverCodigoTipoPersistencia(
+        tipo.codigo,
+        tipo,
+        codigosTipoPermitidos,
+      );
     }
 
     const chave = this.normalizarTextoBusca(valor);
     if (!chave) {
       const tipoOutros = tiposDespesa.find((item) => item.codigo === 'O');
-      return tipoOutros?.codigo ?? 'O';
+      return this.resolverCodigoTipoPersistencia(
+        tipoOutros?.codigo ?? 'O',
+        tipoOutros ?? null,
+        codigosTipoPermitidos,
+      );
     }
 
     const tipoPorInicial = tiposDespesa.find(
       (item) => item.codigo === chave.slice(0, 1),
     );
     if (tipoPorInicial) {
-      return tipoPorInicial.codigo;
+      return this.resolverCodigoTipoPersistencia(
+        tipoPorInicial.codigo,
+        tipoPorInicial,
+        codigosTipoPermitidos,
+      );
     }
 
     throw new BadRequestException('tipo da despesa invalido.');
+  }
+
+  private resolverCodigoTipoPersistencia(
+    codigoPrincipal: string,
+    tipo: TipoDespesaConfig | null,
+    codigosTipoPermitidos: Set<string> | null,
+  ) {
+    const codigo = this.normalizarTextoBusca(codigoPrincipal);
+    if (!codigosTipoPermitidos || codigosTipoPermitidos.size === 0) {
+      return codigo;
+    }
+
+    if (codigosTipoPermitidos.has(codigo)) {
+      return codigo;
+    }
+
+    if (tipo) {
+      for (const alias of tipo.aliases) {
+        const candidato = this.normalizarTextoBusca(alias);
+        if (codigosTipoPermitidos.has(candidato)) {
+          return candidato;
+        }
+      }
+    }
+
+    throw new BadRequestException(
+      'tipo da despesa invalido para as regras atuais da base.',
+    );
   }
 
   private normalizarTipoRetorno(
