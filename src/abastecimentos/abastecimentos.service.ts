@@ -560,7 +560,12 @@ export class AbastecimentosService {
         ['km', 'km_abastecimento', 'km_veiculo', 'km_atual'],
         'km',
       )!,
-      observacao: this.encontrarColuna(set, ['observacao', 'obs'], '', false),
+      observacao: this.encontrarColuna(
+        set,
+        ['observacao', 'observacoes', 'obs'],
+        '',
+        false,
+      ),
       criadoEm: this.encontrarColuna(
         set,
         ['criado_em', 'created_at'],

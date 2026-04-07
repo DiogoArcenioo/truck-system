@@ -20,6 +20,7 @@ type MapaColunasDespesa = {
   idMotorista: string | null;
   idViagem: string | null;
   ativo: string | null;
+  situacao: string | null;
   data: string;
   tipo: string;
   descricao: string | null;
@@ -101,6 +102,10 @@ export class DespesasService {
       if (colunas.ativo) {
         valores.push(true);
         filtros.push(`${this.quote(colunas.ativo)} = $${valores.length}`);
+      } else if (colunas.situacao) {
+        filtros.push(
+          `UPPER(COALESCE(${this.quote(colunas.situacao)}::text, 'A')) NOT IN ('I', 'INATIVO', 'INATIVA', 'FALSE', 'F', '0')`,
+        );
       }
 
       const sql = [
@@ -142,9 +147,22 @@ export class DespesasService {
       }
 
       const situacaoFiltro = this.resolverSituacaoFiltro(filtro.situacao);
-      if (colunas.ativo && situacaoFiltro !== 'TODOS') {
-        valores.push(situacaoFiltro === 'ATIVO');
-        filtros.push(`${this.quote(colunas.ativo)} = $${valores.length}`);
+      if (situacaoFiltro !== 'TODOS') {
+        if (colunas.ativo) {
+          valores.push(situacaoFiltro === 'ATIVO');
+          filtros.push(`${this.quote(colunas.ativo)} = $${valores.length}`);
+        } else if (colunas.situacao) {
+          const colunaSituacao = this.quote(colunas.situacao);
+          if (situacaoFiltro === 'ATIVO') {
+            filtros.push(
+              `UPPER(COALESCE(${colunaSituacao}::text, 'A')) NOT IN ('I', 'INATIVO', 'INATIVA', 'FALSE', 'F', '0')`,
+            );
+          } else {
+            filtros.push(
+              `UPPER(COALESCE(${colunaSituacao}::text, 'A')) IN ('I', 'INATIVO', 'INATIVA', 'FALSE', 'F', '0')`,
+            );
+          }
+        }
       }
 
       if (filtro.idVeiculo !== undefined) {
@@ -331,6 +349,11 @@ export class DespesasService {
           valores.push(String(idEmpresa));
         }
 
+        if (colunas.situacao) {
+          campos.push(colunas.situacao);
+          valores.push('A');
+        }
+
         const sql = `
           INSERT INTO app.despesas (${campos.map((campo) => this.quote(campo)).join(', ')})
           VALUES (${valores.map((_, index) => `$${index + 1}`).join(', ')})
@@ -351,7 +374,7 @@ export class DespesasService {
             manager,
             idEmpresa,
             despesa.idViagem,
-            colunas.ativo !== null,
+            this.possuiControleAtivo(colunas),
           );
         }
 
@@ -493,7 +516,7 @@ export class DespesasService {
           idEmpresa,
           atual.idViagem,
           despesaAtualizada.idViagem,
-          colunas.ativo !== null,
+          this.possuiControleAtivo(colunas),
         );
 
         return {
@@ -528,6 +551,14 @@ export class DespesasService {
           AND ${this.quote(colunas.ativo)} = true
         RETURNING *
       `
+        : colunas.situacao
+          ? `
+        UPDATE app.despesas
+        SET ${this.quote(colunas.situacao)} = 'I'
+        WHERE ${filtros.join(' AND ')}
+          AND UPPER(COALESCE(${this.quote(colunas.situacao)}::text, 'A')) NOT IN ('I', 'INATIVO', 'INATIVA', 'FALSE', 'F', '0')
+        RETURNING *
+      `
         : `
         DELETE FROM app.despesas
         WHERE ${filtros.join(' AND ')}
@@ -548,13 +579,13 @@ export class DespesasService {
           manager,
           idEmpresa,
           despesaRemovida.idViagem,
-          colunas.ativo !== null,
+          this.possuiControleAtivo(colunas),
         );
       }
 
       return {
         sucesso: true,
-        mensagem: colunas.ativo
+        mensagem: colunas.ativo || colunas.situacao
           ? 'Despesa inativada com sucesso.'
           : 'Despesa removida com sucesso.',
         idDespesa,
@@ -624,6 +655,12 @@ export class DespesasService {
         set,
         ['ativo'],
         'situacao ativa',
+        false,
+      ),
+      situacao: this.encontrarColuna(
+        set,
+        ['situacao', 'status'],
+        'situacao',
         false,
       ),
       data: this.encontrarColuna(
@@ -908,7 +945,11 @@ export class DespesasService {
       ativo:
         colunas.ativo !== null
           ? this.converterBooleano(registro[colunas.ativo]) ?? true
-          : true,
+          : colunas.situacao !== null
+            ? !this.situacaoTextoEhInativa(
+                this.converterTexto(registro[colunas.situacao]),
+              )
+            : true,
       data: this.converterData(registro[colunas.data]) ?? new Date(0),
       tipo,
       tipoDescricao: this.descreverTipo(tipo, tipoRaw),
@@ -1000,6 +1041,22 @@ export class DespesasService {
       .replace(/[\u0300-\u036f]/g, '')
       .trim()
       .toUpperCase();
+  }
+
+  private possuiControleAtivo(colunas: MapaColunasDespesa) {
+    return colunas.ativo !== null || colunas.situacao !== null;
+  }
+
+  private situacaoTextoEhInativa(valor: string | null) {
+    const texto = (valor ?? '').trim().toUpperCase();
+    return (
+      texto === 'I' ||
+      texto === 'INATIVO' ||
+      texto === 'INATIVA' ||
+      texto === 'FALSE' ||
+      texto === 'F' ||
+      texto === '0'
+    );
   }
 
   private async resolverVinculosDespesa(

@@ -721,12 +721,45 @@ export class PneusService {
     idEmpresa: number,
     callback: (manager: EntityManager) => Promise<T>,
   ): Promise<T> {
+    if (this.estruturaInicializada && !this.estruturaDisponivel) {
+      // Permite recuperar automaticamente quando o script foi executado apos uma falha inicial.
+      this.estruturaInicializada = false;
+    }
     await this.garantirEstrutura();
-    this.exigirEstruturaDisponivel();
+    if (!this.estruturaDisponivel) {
+      const estruturaDisponivelPorConsulta =
+        await this.verificarEstruturaPorConsultaDireta();
+      if (estruturaDisponivelPorConsulta) {
+        this.estruturaDisponivel = true;
+        this.estruturaInicializada = true;
+      }
+    }
+    if (!this.estruturaDisponivel) {
+      this.logger.warn(
+        'Estrutura de pneus marcada como indisponivel na inicializacao. Tentando seguir com consulta/transacao para validar o estado real do banco.',
+      );
+    }
 
     return this.dataSource.manager.transaction(async (manager) => {
       await configurarContextoEmpresaRls(manager, idEmpresa);
-      return callback(manager);
+      try {
+        return await callback(manager);
+      } catch (error) {
+        if (error instanceof QueryFailedError) {
+          const erroPg = error.driverError as { code?: string; message?: string };
+          if (erroPg.code === '42P01') {
+            throw new BadRequestException(
+              'Tabela de pneus nao encontrada. Execute o script sql/pneus_schema.sql.',
+            );
+          }
+          if (erroPg.code === '42501') {
+            throw new BadRequestException(
+              'Usuario do banco sem permissao para acessar app.pneus/app.pneu_vinculos_veiculo/app.pneu_movimentacoes.',
+            );
+          }
+        }
+        throw error;
+      }
     });
   }
 
@@ -1204,25 +1237,55 @@ export class PneusService {
   private async verificarEstruturaPneusExiste(): Promise<boolean> {
     const rows = (await this.dataSource.query(
       `
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'app'
-        AND table_name IN ('pneus', 'pneu_vinculos_veiculo', 'pneu_movimentacoes')
+      SELECT
+        EXISTS (
+          SELECT 1
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'app'
+            AND c.relname = 'pneus'
+            AND c.relkind IN ('r', 'p')
+        ) AS pneus,
+        EXISTS (
+          SELECT 1
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'app'
+            AND c.relname = 'pneu_vinculos_veiculo'
+            AND c.relkind IN ('r', 'p')
+        ) AS vinculos,
+        EXISTS (
+          SELECT 1
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'app'
+            AND c.relname = 'pneu_movimentacoes'
+            AND c.relkind IN ('r', 'p')
+        ) AS movimentacoes
       `,
     )) as RegistroBanco[];
 
-    const existentes = new Set(
-      rows
-        .map((row) => this.toText(row.table_name))
-        .filter((table): table is string => Boolean(table))
-        .map((table) => table.toLowerCase()),
-    );
+    const row = rows[0] ?? {};
+    const possuiPneus = this.toBoolean(row.pneus) ?? false;
+    const possuiVinculos = this.toBoolean(row.vinculos) ?? false;
+    const possuiMovimentacoes = this.toBoolean(row.movimentacoes) ?? false;
 
-    return (
-      existentes.has('pneus') &&
-      existentes.has('pneu_vinculos_veiculo') &&
-      existentes.has('pneu_movimentacoes')
-    );
+    return possuiPneus && possuiVinculos && possuiMovimentacoes;
+  }
+
+  private async verificarEstruturaPorConsultaDireta(): Promise<boolean> {
+    try {
+      await this.dataSource.query('SELECT 1 FROM app.pneus LIMIT 1');
+      await this.dataSource.query(
+        'SELECT 1 FROM app.pneu_vinculos_veiculo LIMIT 1',
+      );
+      await this.dataSource.query(
+        'SELECT 1 FROM app.pneu_movimentacoes LIMIT 1',
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async executarScriptCriacaoEstruturaPneus() {

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, Not, QueryFailedError, Repository } from 'typeorm';
 import { configurarContextoEmpresaRls } from '../common/database/rls.util';
 import { JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { AtualizarViagemDto } from './dto/atualizar-viagem.dto';
@@ -61,7 +61,7 @@ export class ViagensService {
   async listarTodas(idEmpresa: number) {
     return this.executarComRls(idEmpresa, async (viagemRepository, manager) => {
       const viagens = await viagemRepository.find({
-        where: { idEmpresa: String(idEmpresa) },
+        where: { idEmpresa: String(idEmpresa), status: Not('I') },
         order: { dataInicio: 'DESC', idViagem: 'DESC' },
       });
       const pesoPorViagem = await this.carregarMapaPesoViagens(
@@ -114,6 +114,10 @@ export class ViagensService {
       if (filtro.status !== undefined) {
         query.andWhere('viagem.status = :status', {
           status: filtro.status,
+        });
+      } else {
+        query.andWhere("COALESCE(viagem.status, 'A') <> :statusInativo", {
+          statusInativo: 'I',
         });
       }
 
@@ -400,20 +404,27 @@ export class ViagensService {
 
   async remover(idEmpresa: number, idViagem: number) {
     return this.executarComRls(idEmpresa, async (viagemRepository) => {
-      const resultado = await viagemRepository.delete({
+      const viagem = await this.buscarViagemPorIdOuFalhar(
+        viagemRepository,
+        idEmpresa,
         idViagem,
-        idEmpresa: String(idEmpresa),
-      });
+      );
 
-      if (!resultado.affected) {
-        throw new NotFoundException(
-          'Viagem nao encontrada para a empresa logada.',
-        );
+      if ((viagem.status ?? '').trim().toUpperCase() === 'I') {
+        throw new BadRequestException('Viagem ja esta inativa.');
       }
+
+      await viagemRepository.update(
+        { idViagem, idEmpresa: String(idEmpresa) },
+        {
+          status: 'I',
+          atualizadoEm: new Date(),
+        },
+      );
 
       return {
         sucesso: true,
-        mensagem: 'Viagem removida com sucesso.',
+        mensagem: 'Viagem inativada com sucesso.',
         idViagem,
       };
     });

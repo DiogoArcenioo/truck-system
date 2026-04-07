@@ -287,30 +287,9 @@ export class OrdemServicoService {
         const situacaoAtual =
           this.converterTexto(atual.situacao_os)?.toUpperCase() ?? 'A';
 
-        if (
-          payload.idVeiculo !== undefined &&
-          payload.idVeiculo !== idVeiculoAtual
-        ) {
+        if (situacaoAtual !== 'A') {
           throw new BadRequestException(
-            'A placa/veiculo da OS nao pode ser alterada depois do cadastro.',
-          );
-        }
-
-        if (
-          payload.idFornecedor !== undefined &&
-          payload.idFornecedor !== idFornecedorAtual
-        ) {
-          throw new BadRequestException(
-            'O fornecedor da OS nao pode ser alterado depois do cadastro.',
-          );
-        }
-
-        if (
-          payload.dataCadastro !== undefined &&
-          payload.dataCadastro !== dataCadastroAtual
-        ) {
-          throw new BadRequestException(
-            'A data de abertura da OS nao pode ser alterada depois do cadastro.',
+            'Ordens de servico fechadas ou canceladas podem apenas ser visualizadas.',
           );
         }
 

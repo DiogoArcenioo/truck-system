@@ -181,7 +181,7 @@ export class RequisicaoService {
       return await this.executarComRls(idEmpresa, async (manager) => {
         const payload = this.normalizarCriacao(dados, usuarioJwt);
 
-        await this.validarOrdemServicoExiste(manager, idEmpresa, payload.idOs);
+        await this.validarOrdemServicoExiste(manager, idEmpresa, payload.idOs, true);
         await this.validarProdutosInformados(manager, idEmpresa, payload.itens);
 
         const idRequisicao = await this.inserirCabecalhoRequisicao(
@@ -229,6 +229,13 @@ export class RequisicaoService {
           idEmpresa,
           idRequisicao,
         );
+        const situacaoAtualRequisicao =
+          this.converterTexto(atual.situacao)?.toUpperCase() ?? 'A';
+        if (situacaoAtualRequisicao !== 'A') {
+          throw new BadRequestException(
+            'Requisicoes fechadas ou canceladas podem apenas ser visualizadas.',
+          );
+        }
         const payload = this.normalizarAtualizacao(dados, usuarioJwt);
         const idOsAnterior = this.converterNumero(atual.id_os) ?? 0;
 
@@ -247,7 +254,7 @@ export class RequisicaoService {
           throw new BadRequestException('idOs invalido para requisicao.');
         }
 
-        await this.validarOrdemServicoExiste(manager, idEmpresa, idOs);
+        await this.validarOrdemServicoExiste(manager, idEmpresa, idOs, true);
 
         if (payload.itens !== undefined) {
           await this.validarProdutosInformados(manager, idEmpresa, payload.itens);
@@ -687,20 +694,30 @@ export class RequisicaoService {
     manager: EntityManager,
     idEmpresa: number,
     idOs: number,
+    exigirAberta = false,
   ) {
     const rows = (await manager.query(
       `
-        SELECT id_os
+        SELECT id_os, situacao_os
         FROM app.ordem_servico
         WHERE id_empresa = $1
           AND id_os = $2
         LIMIT 1
       `,
       [String(idEmpresa), idOs],
-    )) as Array<{ id_os?: number | string }>;
+    )) as Array<{ id_os?: number | string; situacao_os?: string }>;
 
     if (!rows[0]) {
       throw new BadRequestException('Ordem de servico nao encontrada para vincular a requisicao.');
+    }
+
+    if (exigirAberta) {
+      const situacao = this.converterTexto(rows[0].situacao_os)?.toUpperCase() ?? 'A';
+      if (situacao !== 'A') {
+        throw new BadRequestException(
+          'A OS vinculada esta fechada ou cancelada. Nao e permitido criar ou editar requisicoes nela.',
+        );
+      }
     }
   }
 
