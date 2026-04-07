@@ -318,36 +318,26 @@ export class CancelamentosService {
     try {
       return this.executarComRls(idEmpresa, async (manager) => {
         const usuarioCancelamento = this.obterUsuarioOperacao(usuario);
-        const usuarioSolicitante = this.normalizarTextoOpcional(
-          dados.usuarioSolicitante,
-        );
+        const usuarioSolicitante = usuarioCancelamento;
         const observacao = this.normalizarTextoOpcional(dados.observacao);
         const dataCancelamento = dados.dataCancelamento
           ? this.normalizarDataHora(dados.dataCancelamento, 'dataCancelamento')
           : new Date().toISOString();
 
-        let motivoSelecionado: MotivoCancelamento | null = null;
-        if (dados.idMotivo !== undefined) {
-          motivoSelecionado = await this.buscarMotivoOuFalhar(
-            manager,
-            idEmpresa,
-            dados.idMotivo,
+        if (dados.idMotivo === undefined) {
+          throw new BadRequestException(
+            'Selecione um motivo de cancelamento para reabrir o documento.',
           );
-          if (!motivoSelecionado.ativo) {
-            throw new BadRequestException(
-              'O motivo selecionado esta inativo. Escolha um motivo ativo.',
-            );
-          }
         }
 
-        const motivoDescricao = this.resolverDescricaoMotivo(
-          dados.motivoDescricao,
-          motivoSelecionado?.descricao ?? null,
+        const motivoSelecionado = await this.buscarMotivoOuFalhar(
+          manager,
+          idEmpresa,
+          dados.idMotivo,
         );
-
-        if (!motivoDescricao) {
+        if (!motivoSelecionado.ativo) {
           throw new BadRequestException(
-            'Informe um motivo para realizar a reabertura do documento.',
+            'O motivo selecionado esta inativo. Escolha um motivo ativo.',
           );
         }
 
@@ -377,8 +367,8 @@ export class CancelamentosService {
           idEmpresa,
           documento,
           {
-            idMotivo: motivoSelecionado?.idMotivo ?? null,
-            motivoDescricao,
+            idMotivo: motivoSelecionado.idMotivo,
+            motivoDescricao: motivoSelecionado.descricao,
             usuarioCancelamento,
             usuarioSolicitante,
             observacao,
@@ -981,17 +971,6 @@ export class CancelamentosService {
       referenciaDocumento: referenciaObjeto,
       criadoEm: this.toDate(row.criado_em),
     };
-  }
-
-  private resolverDescricaoMotivo(
-    motivoLivre: string | undefined,
-    motivoPadrao: string | null,
-  ) {
-    const livre = this.normalizarTextoOpcional(motivoLivre);
-    if (livre) {
-      return livre;
-    }
-    return this.normalizarTextoOpcional(motivoPadrao);
   }
 
   private resolverLabelTipoDocumento(tipoDocumento: TipoDocumentoCancelamento): string {
