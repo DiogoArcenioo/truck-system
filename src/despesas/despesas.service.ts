@@ -282,6 +282,7 @@ export class DespesasService {
       const tipos = await this.carregarTiposDespesa(manager);
       return {
         sucesso: true,
+        atalhoCadastroDespesa: true,
         total: tipos.length,
         tipos: tipos.map((tipo) => ({
           codigo: tipo.codigo,
