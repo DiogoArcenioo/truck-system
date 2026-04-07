@@ -151,7 +151,6 @@ export class CancelamentosService {
           dados.descricao,
           'descricao',
         );
-        const codigo = this.normalizarCodigoOpcional(dados.codigo);
         const usuarioAtualizacao = this.normalizarTextoObrigatorio(
           dados.usuarioAtualizacao ?? this.obterUsuarioOperacao(usuario),
           'usuarioAtualizacao',
@@ -160,7 +159,6 @@ export class CancelamentosService {
         const rows = await this.inserirMotivoComFallbackSequencia(
           manager,
           idEmpresa,
-          codigo,
           descricao,
           usuarioAtualizacao,
         );
@@ -200,10 +198,7 @@ export class CancelamentosService {
           dados.descricao !== undefined
             ? this.normalizarTextoObrigatorio(dados.descricao, 'descricao')
             : atual.descricao;
-        const codigo =
-          dados.codigo !== undefined
-            ? this.normalizarCodigoOpcional(dados.codigo)
-            : atual.codigo;
+        const codigo = atual.codigo;
         const ativo =
           dados.ativo !== undefined ? Boolean(dados.ativo) : Boolean(atual.ativo);
         const usuarioAtualizacao = this.normalizarTextoObrigatorio(
@@ -954,7 +949,6 @@ export class CancelamentosService {
   private async inserirMotivoComFallbackSequencia(
     manager: EntityManager,
     idEmpresa: number,
-    codigo: string | null,
     descricao: string,
     usuarioAtualizacao: string,
   ): Promise<RegistroBanco[]> {
@@ -963,7 +957,6 @@ export class CancelamentosService {
     try {
       const rows = await this.executarInsertMotivoDinamico(manager, {
         idEmpresa,
-        codigo,
         descricao,
         usuarioAtualizacao,
       });
@@ -990,7 +983,6 @@ export class CancelamentosService {
       return await this.executarInsertMotivoDinamico(manager, {
         idMotivoManual: proximoId,
         idEmpresa,
-        codigo,
         descricao,
         usuarioAtualizacao,
       });
@@ -1002,7 +994,6 @@ export class CancelamentosService {
     dados: {
       idMotivoManual?: number;
       idEmpresa: number;
-      codigo: string | null;
       descricao: string;
       usuarioAtualizacao: string;
     },
@@ -1043,7 +1034,11 @@ export class CancelamentosService {
 
     adicionarValor('id_empresa', dados.idEmpresa);
     if (colunas.has('codigo')) {
-      adicionarValor('codigo', dados.codigo);
+      const codigoSequencial = await this.obterProximoCodigoMotivo(
+        manager,
+        dados.idEmpresa,
+      );
+      adicionarValor('codigo', codigoSequencial);
     }
     adicionarValor('descricao', dados.descricao);
 
@@ -1071,6 +1066,40 @@ export class CancelamentosService {
     `;
 
     return (await manager.query(sql, valores)) as RegistroBanco[];
+  }
+
+  private async obterProximoCodigoMotivo(
+    manager: EntityManager,
+    idEmpresa: number,
+  ): Promise<string> {
+    const [namespaceLock, idLock] = this.gerarParChaveLock(
+      `app.cancelamento_motivos:codigo:${idEmpresa}`,
+    );
+    await manager.query(`SELECT pg_advisory_xact_lock($1::int, $2::int)`, [
+      namespaceLock,
+      idLock,
+    ]);
+
+    const rows = (await manager.query(
+      `
+        SELECT
+          COALESCE(
+            MAX(
+              CASE
+                WHEN BTRIM(COALESCE(codigo, '')) ~ '^[0-9]+$' THEN (BTRIM(codigo))::BIGINT
+                ELSE 0
+              END
+            ),
+            0
+          ) + 1 AS proximo_codigo
+        FROM app.cancelamento_motivos
+        WHERE id_empresa = $1
+      `,
+      [idEmpresa],
+    )) as RegistroBanco[];
+
+    const proximoCodigo = this.toNumber(rows[0]?.proximo_codigo);
+    return String(proximoCodigo && proximoCodigo > 0 ? proximoCodigo : 1);
   }
 
   private async obterColunasTabela(
@@ -1310,25 +1339,6 @@ export class CancelamentosService {
     }
     const texto = valor.trim();
     return texto ? texto : null;
-  }
-
-  private normalizarCodigoOpcional(valor: string | undefined) {
-    if (!valor?.trim()) {
-      return null;
-    }
-
-    const codigo = valor
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, '_')
-      .replace(/[^A-Z0-9_-]/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 30);
-
-    return codigo || null;
   }
 
   private normalizarDataHora(valor: string, campo: string) {

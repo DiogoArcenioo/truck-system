@@ -173,6 +173,6 @@ export class AssinaturaAcessoInterceptor implements NestInterceptor {
 
     const tokenMs = Math.trunc(sessaoToken);
     const ultimoLoginMs = Math.trunc(ultimoLoginEm.getTime());
-    return tokenMs === ultimoLoginMs;
+    return tokenMs >= ultimoLoginMs;
   }
 }
