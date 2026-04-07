@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   ParseIntPipe,
@@ -62,8 +63,11 @@ export class DespesasController {
     @Req() request: RequisicaoAutenticada,
     @Body() dados: CriarDespesaDto,
   ) {
-    const usuario = this.obterUsuarioAutenticado(request);
-    return this.despesasService.cadastrar(usuario.idEmpresa, dados, usuario);
+    this.obterUsuarioAutenticado(request);
+    void dados;
+    throw new ForbiddenException(
+      'Cadastro de despesas desabilitado para este perfil.',
+    );
   }
 
   @Put(':idDespesa')
@@ -72,12 +76,11 @@ export class DespesasController {
     @Param('idDespesa', ParseIntPipe) idDespesa: number,
     @Body() dados: AtualizarDespesaDto,
   ) {
-    const usuario = this.obterUsuarioAutenticado(request);
-    return this.despesasService.atualizar(
-      usuario.idEmpresa,
-      idDespesa,
-      dados,
-      usuario,
+    this.obterUsuarioAutenticado(request);
+    void idDespesa;
+    void dados;
+    throw new ForbiddenException(
+      'Edicao de despesas desabilitada para este perfil.',
     );
   }
 
@@ -86,8 +89,11 @@ export class DespesasController {
     @Req() request: RequisicaoAutenticada,
     @Param('idDespesa', ParseIntPipe) idDespesa: number,
   ) {
-    const usuario = this.obterUsuarioAutenticado(request);
-    return this.despesasService.remover(usuario.idEmpresa, idDespesa);
+    this.obterUsuarioAutenticado(request);
+    void idDespesa;
+    throw new ForbiddenException(
+      'Exclusao de despesas desabilitada para este perfil.',
+    );
   }
 
   private obterUsuarioAutenticado(
