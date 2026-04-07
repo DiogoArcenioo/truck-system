@@ -1527,6 +1527,21 @@ export class CancelamentosService {
           'Dados informados violam as regras de cadastro de cancelamento.',
         );
       }
+      if (erroPg.code === '23502') {
+        throw new BadRequestException(
+          `Campo obrigatorio ausente no cadastro de motivo/historico. detalhe: ${erroPg.message ?? 'valor nulo em coluna obrigatoria'}`,
+        );
+      }
+      if (erroPg.code === '22P02' || erroPg.code === '42804') {
+        throw new BadRequestException(
+          `Formato de dado invalido para cadastro de motivo/historico. detalhe: ${erroPg.message ?? 'tipo invalido'}`,
+        );
+      }
+      if (erroPg.code === '23503') {
+        throw new BadRequestException(
+          `Registro relacionado nao encontrado para cadastro de motivo/historico. detalhe: ${erroPg.message ?? 'chave estrangeira invalida'}`,
+        );
+      }
       if (erroPg.code === '42501') {
         const detalhe = `${erroPg.message ?? ''} ${erroPg.detail ?? ''}`.toLowerCase();
         if (detalhe.includes('sequence')) {
@@ -1553,6 +1568,10 @@ export class CancelamentosService {
           'Funcao SQL necessaria para controle de cancelamentos nao esta disponivel no banco.',
         );
       }
+
+      throw new BadRequestException(
+        `Falha SQL ao ${acao}. code=${erroPg.code ?? 'N/A'} message=${erroPg.message ?? 'erro desconhecido'}`,
+      );
     }
 
     this.logger.error(
