@@ -71,6 +71,34 @@ type TipoDespesaConfig = {
   aliases: string[];
 };
 
+const TIPOS_DESPESA_PADRAO: TipoDespesaConfig[] = [
+  {
+    codigo: 'P',
+    descricao: 'PEDAGIO',
+    aliases: ['P', 'PEDAGIO', 'PEDAGIOS'],
+  },
+  {
+    codigo: 'A',
+    descricao: 'ALIMENTACAO',
+    aliases: ['A', 'ALIMENTACAO', 'ALIMENTACAO_MOTORISTA', 'ALIMENTOS'],
+  },
+  {
+    codigo: 'E',
+    descricao: 'ESTADIA',
+    aliases: ['E', 'ESTADIA', 'HOSPEDAGEM'],
+  },
+  {
+    codigo: 'L',
+    descricao: 'LAVACAO',
+    aliases: ['L', 'LAVACAO', 'LAVAGEM'],
+  },
+  {
+    codigo: 'O',
+    descricao: 'OUTROS',
+    aliases: ['O', 'OUTRO', 'OUTROS'],
+  },
+];
+
 @Injectable()
 export class DespesasService {
   private readonly logger = new Logger(DespesasService.name);
@@ -739,7 +767,7 @@ export class DespesasService {
   private async carregarTiposDespesa(
     manager: EntityManager,
   ): Promise<TipoDespesaConfig[]> {
-    let rows: Array<{ codigo?: unknown; descricao?: unknown; aliases?: unknown }>;
+    let rows: Array<{ codigo?: unknown; descricao?: unknown; aliases?: unknown }> = [];
 
     try {
       rows = (await manager.query(`
@@ -752,13 +780,19 @@ export class DespesasService {
       if (error instanceof QueryFailedError) {
         const erroPg = error.driverError as { code?: string };
         if (erroPg.code === '42P01') {
-          throw new BadRequestException('Tabela app.tipo_despesas nao encontrada.');
+          this.logger.warn(
+            'Tabela app.tipo_despesas nao encontrada. Aplicando fallback de tipos padrao para despesas.',
+          );
+          rows = [];
+        } else {
+          throw error;
         }
+      } else {
+        throw error;
       }
-      throw error;
     }
 
-    const tipos: TipoDespesaConfig[] = [];
+    const tiposCarregados: TipoDespesaConfig[] = [];
     for (const row of rows) {
       const codigoRaw = this.converterTexto(row.codigo);
       if (!codigoRaw) {
@@ -772,16 +806,17 @@ export class DespesasService {
 
       const descricao = this.converterTexto(row.descricao) ?? codigo;
       const aliases = this.normalizarAliasesTipo(row.aliases, codigo, descricao);
-      tipos.push({ codigo, descricao, aliases });
+      tiposCarregados.push({ codigo, descricao, aliases });
     }
 
-    if (tipos.length === 0) {
-      throw new BadRequestException(
-        'Tabela app.tipo_despesas sem tipos de despesa ativos.',
-      );
+    const tipos = this.mesclarTiposDespesaComPadrao(tiposCarregados);
+    if (tipos.length > 0) {
+      return tipos;
     }
 
-    return tipos;
+    throw new BadRequestException(
+      'Tabela app.tipo_despesas sem tipos de despesa ativos.',
+    );
   }
 
   private normalizarAliasesTipo(
@@ -808,6 +843,67 @@ export class DespesasService {
           .filter((item) => item.length > 0),
       ),
     );
+  }
+
+  private mesclarTiposDespesaComPadrao(tiposCarregados: TipoDespesaConfig[]) {
+    const mapaOrdemPadrao = new Map<string, number>();
+    TIPOS_DESPESA_PADRAO.forEach((tipo, index) => {
+      mapaOrdemPadrao.set(this.normalizarTextoBusca(tipo.codigo), index);
+    });
+
+    const mapaTipos = new Map<string, TipoDespesaConfig>();
+    const upsert = (tipo: TipoDespesaConfig, priorizarDescricaoNova: boolean) => {
+      const codigo = this.normalizarTextoBusca(tipo.codigo);
+      if (!codigo) {
+        return;
+      }
+
+      const descricaoNova = this.converterTexto(tipo.descricao) ?? codigo;
+      const aliasesNovos = this.normalizarAliasesTipo(
+        tipo.aliases,
+        codigo,
+        descricaoNova,
+      );
+
+      const atual = mapaTipos.get(codigo);
+      if (!atual) {
+        mapaTipos.set(codigo, {
+          codigo,
+          descricao: descricaoNova,
+          aliases: aliasesNovos,
+        });
+        return;
+      }
+
+      const descricaoFinal = priorizarDescricaoNova ? descricaoNova : atual.descricao;
+      const aliasesFinal = this.normalizarAliasesTipo(
+        [...atual.aliases, ...aliasesNovos],
+        codigo,
+        descricaoFinal,
+      );
+      mapaTipos.set(codigo, {
+        codigo,
+        descricao: descricaoFinal,
+        aliases: aliasesFinal,
+      });
+    };
+
+    for (const tipoPadrao of TIPOS_DESPESA_PADRAO) {
+      upsert(tipoPadrao, false);
+    }
+
+    for (const tipoCarregado of tiposCarregados) {
+      upsert(tipoCarregado, true);
+    }
+
+    return Array.from(mapaTipos.values()).sort((a, b) => {
+      const ordemA = mapaOrdemPadrao.get(a.codigo) ?? Number.MAX_SAFE_INTEGER;
+      const ordemB = mapaOrdemPadrao.get(b.codigo) ?? Number.MAX_SAFE_INTEGER;
+      if (ordemA !== ordemB) {
+        return ordemA - ordemB;
+      }
+      return a.codigo.localeCompare(b.codigo);
+    });
   }
 
   private encontrarColuna(
@@ -1139,6 +1235,13 @@ export class DespesasService {
     if (!chave) {
       const tipoOutros = tiposDespesa.find((item) => item.codigo === 'O');
       return tipoOutros?.codigo ?? 'O';
+    }
+
+    const tipoPorInicial = tiposDespesa.find(
+      (item) => item.codigo === chave.slice(0, 1),
+    );
+    if (tipoPorInicial) {
+      return tipoPorInicial.codigo;
     }
 
     throw new BadRequestException('tipo da despesa invalido.');
