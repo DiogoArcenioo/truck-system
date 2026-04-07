@@ -71,6 +71,14 @@ type TipoDespesaConfig = {
   aliases: string[];
 };
 
+type MapaColunasTipoDespesa = {
+  codigo: string;
+  descricao: string | null;
+  aliases: string | null;
+  ativo: string | null;
+  ordem: string | null;
+};
+
 const TIPOS_DESPESA_PADRAO: TipoDespesaConfig[] = [
   {
     codigo: 'P',
@@ -416,7 +424,7 @@ export class DespesasService {
             manager,
             idEmpresa,
             despesa.idViagem,
-            this.possuiControleAtivo(colunas),
+            colunas,
           );
         }
 
@@ -573,7 +581,7 @@ export class DespesasService {
           idEmpresa,
           atual.idViagem,
           despesaAtualizada.idViagem,
-          this.possuiControleAtivo(colunas),
+          colunas,
         );
 
         return {
@@ -641,7 +649,7 @@ export class DespesasService {
           manager,
           idEmpresa,
           despesaRemovida.idViagem,
-          this.possuiControleAtivo(colunas),
+          colunas,
         );
       }
 
@@ -767,15 +775,34 @@ export class DespesasService {
   private async carregarTiposDespesa(
     manager: EntityManager,
   ): Promise<TipoDespesaConfig[]> {
+    const colunas = await this.carregarMapaColunasTipoDespesa(manager);
     let rows: Array<{ codigo?: unknown; descricao?: unknown; aliases?: unknown }> = [];
 
     try {
-      rows = (await manager.query(`
-        SELECT codigo, descricao, aliases
+      const whereAtivo = colunas.ativo
+        ? `WHERE COALESCE(${this.quote(colunas.ativo)}, true) = true`
+        : '';
+      const orderSql = colunas.ordem
+        ? `ORDER BY ${this.quote(colunas.ordem)} ASC, ${this.quote(colunas.codigo)} ASC`
+        : `ORDER BY ${this.quote(colunas.codigo)} ASC`;
+      const descricaoSql = colunas.descricao
+        ? this.quote(colunas.descricao)
+        : `${this.quote(colunas.codigo)}::text`;
+      const aliasesSql = colunas.aliases
+        ? this.quote(colunas.aliases)
+        : 'NULL::text[]';
+
+      rows = (await manager.query(
+        `
+        SELECT
+          ${this.quote(colunas.codigo)} AS codigo,
+          ${descricaoSql} AS descricao,
+          ${aliasesSql} AS aliases
         FROM app.tipo_despesas
-        WHERE COALESCE(ativo, true) = true
-        ORDER BY ordem ASC, codigo ASC
-      `)) as Array<{ codigo?: unknown; descricao?: unknown; aliases?: unknown }>;
+        ${whereAtivo}
+        ${orderSql}
+      `,
+      )) as Array<{ codigo?: unknown; descricao?: unknown; aliases?: unknown }>;
     } catch (error) {
       if (error instanceof QueryFailedError) {
         const erroPg = error.driverError as { code?: string };
@@ -817,6 +844,41 @@ export class DespesasService {
     throw new BadRequestException(
       'Tabela app.tipo_despesas sem tipos de despesa ativos.',
     );
+  }
+
+  private async carregarMapaColunasTipoDespesa(
+    manager: EntityManager,
+  ): Promise<MapaColunasTipoDespesa> {
+    const rows = (await manager.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'app'
+        AND table_name = 'tipo_despesas'
+    `)) as Array<{ column_name?: string }>;
+
+    if (rows.length === 0) {
+      return {
+        codigo: 'codigo',
+        descricao: 'descricao',
+        aliases: 'aliases',
+        ativo: 'ativo',
+        ordem: 'ordem',
+      };
+    }
+
+    const set = new Set(
+      rows
+        .map((row) => (typeof row.column_name === 'string' ? row.column_name : ''))
+        .filter((value) => value.length > 0),
+    );
+
+    return {
+      codigo: this.encontrarColuna(set, ['codigo'], 'codigo do tipo')!,
+      descricao: this.encontrarColuna(set, ['descricao'], 'descricao', false),
+      aliases: this.encontrarColuna(set, ['aliases'], 'aliases', false),
+      ativo: this.encontrarColuna(set, ['ativo'], 'ativo', false),
+      ordem: this.encontrarColuna(set, ['ordem'], 'ordem', false),
+    };
   }
 
   private normalizarAliasesTipo(
@@ -1318,10 +1380,6 @@ export class DespesasService {
       .toUpperCase();
   }
 
-  private possuiControleAtivo(colunas: MapaColunasDespesa) {
-    return colunas.ativo !== null || colunas.situacao !== null;
-  }
-
   private situacaoTextoEhInativa(valor: string | null) {
     const texto = (valor ?? '').trim().toUpperCase();
     return (
@@ -1418,7 +1476,7 @@ export class DespesasService {
     idEmpresa: number,
     idViagemAnterior: number | null,
     idViagemNova: number | null,
-    somenteAtivas: boolean,
+    colunas: MapaColunasDespesa,
   ) {
     const viagens = new Set<number>();
     if (idViagemAnterior && idViagemAnterior > 0) {
@@ -1433,7 +1491,7 @@ export class DespesasService {
         manager,
         idEmpresa,
         idViagem,
-        somenteAtivas,
+        colunas,
       );
     }
   }
@@ -1442,9 +1500,9 @@ export class DespesasService {
     manager: EntityManager,
     idEmpresa: number,
     idViagem: number,
-    somenteAtivas: boolean,
+    colunas: MapaColunasDespesa,
   ) {
-    const filtroAtivo = somenteAtivas ? 'AND COALESCE(ativo, true) = true' : '';
+    const filtroAtivo = this.resolverFiltroAtivoRecalculo(colunas);
     const totalRows = (await manager.query(
       `
       SELECT COALESCE(SUM(COALESCE(valor, 0)), 0)::numeric AS total_despesas
@@ -1470,6 +1528,18 @@ export class DespesasService {
       `,
       [totalDespesas, idViagem, String(idEmpresa)],
     );
+  }
+
+  private resolverFiltroAtivoRecalculo(colunas: MapaColunasDespesa) {
+    if (colunas.ativo) {
+      return `AND COALESCE(${this.quote(colunas.ativo)}, true) = true`;
+    }
+
+    if (colunas.situacao) {
+      return `AND UPPER(COALESCE(${this.quote(colunas.situacao)}::text, 'A')) NOT IN ('I', 'INATIVO', 'INATIVA', 'FALSE', 'F', '0')`;
+    }
+
+    return '';
   }
 
   private quote(coluna: string): string {
