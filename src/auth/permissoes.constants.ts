@@ -109,9 +109,9 @@ const moduloMetadata: Record<ModuloSistema, Omit<ModuloMetadata, 'id'>> = {
     descricao: 'Cadastro, contatos e enderecos de fornecedores.',
   },
   cancelamentos: {
-    label: 'Cancelamentos',
+    label: 'Reabertura',
     descricao:
-      'Reabertura controlada de documentos finalizados com registro de auditoria.',
+      'Reabertura controlada de documentos finalizados com trilha de auditoria.',
   },
   relatorios: {
     label: 'Relatorios',
@@ -210,7 +210,7 @@ export const PERMISSOES_PADRAO_PERFIL: Record<PerfilBase, PermissoesSistema> =
       motoristas: acessoTotal,
       produtos: acessoTotal,
       fornecedores: acessoTotal,
-      cancelamentos: semAcesso,
+      cancelamentos: acessoTotal,
       relatorios: semAcesso,
       usuarios: semAcesso,
     }),

@@ -141,6 +141,10 @@ export class CancelamentosService {
     dados: CriarMotivoCancelamentoDto,
     usuario: JwtUsuarioPayload,
   ) {
+    if (!dados || typeof dados !== 'object') {
+      throw new BadRequestException('Dados do motivo nao informados.');
+    }
+
     try {
       return this.executarComRls(idEmpresa, async (manager) => {
         const descricao = this.normalizarTextoObrigatorio(
@@ -194,6 +198,10 @@ export class CancelamentosService {
     dados: AtualizarMotivoCancelamentoDto,
     usuario: JwtUsuarioPayload,
   ) {
+    if (!dados || typeof dados !== 'object') {
+      throw new BadRequestException('Dados do motivo nao informados.');
+    }
+
     try {
       return this.executarComRls(idEmpresa, async (manager) => {
         const atual = await this.buscarMotivoOuFalhar(manager, idEmpresa, idMotivo);
@@ -315,6 +323,10 @@ export class CancelamentosService {
     dados: CriarCancelamentoDto,
     usuario: JwtUsuarioPayload,
   ) {
+    if (!dados || typeof dados !== 'object') {
+      throw new BadRequestException('Dados de reabertura nao informados.');
+    }
+
     try {
       return this.executarComRls(idEmpresa, async (manager) => {
         const usuarioCancelamento = this.obterUsuarioOperacao(usuario);
