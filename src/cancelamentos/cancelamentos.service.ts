@@ -958,14 +958,19 @@ export class CancelamentosService {
     descricao: string,
     usuarioAtualizacao: string,
   ): Promise<RegistroBanco[]> {
+    const savepoint = 'sp_cancel_motivo_insert';
+    await manager.query(`SAVEPOINT ${savepoint}`);
     try {
-      return await this.executarInsertMotivoDinamico(manager, {
+      const rows = await this.executarInsertMotivoDinamico(manager, {
         idEmpresa,
         codigo,
         descricao,
         usuarioAtualizacao,
       });
+      await this.liberarSavepoint(manager, savepoint);
+      return rows;
     } catch (error) {
+      await this.desfazerSavepoint(manager, savepoint);
       if (
         !this.isErroPermissaoSequence(
           error,
@@ -1106,6 +1111,8 @@ export class CancelamentosService {
     },
     referenciaDocumento: Record<string, unknown>,
   ): Promise<RegistroBanco[]> {
+    const savepoint = 'sp_cancel_historico_insert';
+    await manager.query(`SAVEPOINT ${savepoint}`);
     const parametrosBase = [
       idEmpresa,
       documento.tipoDocumento,
@@ -1122,7 +1129,7 @@ export class CancelamentosService {
     ];
 
     try {
-      return (await manager.query(
+      const rows = (await manager.query(
         `
           INSERT INTO app.cancelamento_documentos (
             id_empresa,
@@ -1146,7 +1153,10 @@ export class CancelamentosService {
         `,
         parametrosBase,
       )) as RegistroBanco[];
+      await this.liberarSavepoint(manager, savepoint);
+      return rows;
     } catch (error) {
+      await this.desfazerSavepoint(manager, savepoint);
       if (
         !this.isErroPermissaoSequence(
           error,
@@ -1189,6 +1199,30 @@ export class CancelamentosService {
         [proximoId, ...parametrosBase],
       )) as RegistroBanco[];
     }
+  }
+
+  private async liberarSavepoint(
+    manager: EntityManager,
+    nomeSavepoint: string,
+  ): Promise<void> {
+    try {
+      await manager.query(`RELEASE SAVEPOINT ${nomeSavepoint}`);
+    } catch {
+      // No-op: release failure should not hide the original operation result.
+    }
+  }
+
+  private async desfazerSavepoint(
+    manager: EntityManager,
+    nomeSavepoint: string,
+  ): Promise<void> {
+    try {
+      await manager.query(`ROLLBACK TO SAVEPOINT ${nomeSavepoint}`);
+    } catch {
+      return;
+    }
+
+    await this.liberarSavepoint(manager, nomeSavepoint);
   }
 
   private isErroPermissaoSequence(error: unknown, nomeSequence: string): boolean {
