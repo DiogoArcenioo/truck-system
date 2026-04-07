@@ -75,7 +75,7 @@ export class CancelamentosService {
 
   async listarOpcoes(idEmpresa: number) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const rows = (await manager.query(
           `
             SELECT *
@@ -104,7 +104,7 @@ export class CancelamentosService {
 
   async listarMotivos(idEmpresa: number, filtro: FiltroMotivosCancelamentoDto) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const situacao = (filtro.situacao ?? 'ATIVO').toUpperCase();
         const where: string[] = ['id_empresa = $1'];
         const valores: Array<number | boolean> = [idEmpresa];
@@ -146,7 +146,7 @@ export class CancelamentosService {
     }
 
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const descricao = this.normalizarTextoObrigatorio(
           dados.descricao,
           'descricao',
@@ -203,7 +203,7 @@ export class CancelamentosService {
     }
 
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const atual = await this.buscarMotivoOuFalhar(manager, idEmpresa, idMotivo);
         const descricao =
           dados.descricao !== undefined
@@ -257,7 +257,7 @@ export class CancelamentosService {
     usuario: JwtUsuarioPayload,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const atual = await this.buscarMotivoOuFalhar(manager, idEmpresa, idMotivo);
         if (!atual.ativo) {
           return {
@@ -304,7 +304,7 @@ export class CancelamentosService {
     idDocumento: number,
   ) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => ({
+      return await this.executarComRls(idEmpresa, async (manager) => ({
         sucesso: true,
         documento: await this.consultarDocumentoInterno(
           manager,
@@ -328,7 +328,7 @@ export class CancelamentosService {
     }
 
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const usuarioCancelamento = this.obterUsuarioOperacao(usuario);
         const usuarioSolicitante = usuarioCancelamento;
         const observacao = this.normalizarTextoOpcional(dados.observacao);
@@ -412,7 +412,7 @@ export class CancelamentosService {
 
   async listarHistorico(idEmpresa: number, filtro: FiltroCancelamentosDto) {
     try {
-      return this.executarComRls(idEmpresa, async (manager) => {
+      return await this.executarComRls(idEmpresa, async (manager) => {
         const where: string[] = ['h.id_empresa = $1'];
         const valores: Array<string | number> = [String(idEmpresa)];
 
