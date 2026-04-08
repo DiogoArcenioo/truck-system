@@ -87,10 +87,12 @@ type ResumoAlertas = {
 };
 
 type PeriodoRelatorioMotoristas = {
-  inicio: Date;
-  fimExclusivo: Date;
+  anoNumero: number | null;
+  mesNumero: number | null;
   mes: string | null;
-  ano: string;
+  ano: string | null;
+  inicioEsperado: string | null;
+  fimEsperado: string | null;
 };
 
 type LinhaRelatorioMotorista = {
@@ -599,14 +601,22 @@ export class DashboardService {
       const filtrosSql = [
         'viagem.id_empresa = $1',
         "COALESCE(UPPER(TRIM(viagem.status)), 'A') <> 'I'",
-        'viagem.data_inicio >= $2::timestamptz',
-        'viagem.data_inicio < $3::timestamptz',
       ];
-      const valores: Array<number | string> = [
-        String(idEmpresa),
-        periodo.inicio.toISOString(),
-        periodo.fimExclusivo.toISOString(),
-      ];
+      const valores: Array<number | string> = [String(idEmpresa)];
+
+      if (periodo.anoNumero !== null) {
+        valores.push(periodo.anoNumero);
+        filtrosSql.push(
+          `EXTRACT(YEAR FROM (viagem.data_inicio AT TIME ZONE 'America/Sao_Paulo'))::int = $${valores.length}`,
+        );
+      }
+
+      if (periodo.mesNumero !== null) {
+        valores.push(periodo.mesNumero);
+        filtrosSql.push(
+          `EXTRACT(MONTH FROM (viagem.data_inicio AT TIME ZONE 'America/Sao_Paulo'))::int = $${valores.length}`,
+        );
+      }
 
       if (filtro.idVeiculo) {
         valores.push(filtro.idVeiculo);
@@ -619,6 +629,51 @@ export class DashboardService {
       }
 
       const whereSql = filtrosSql.join('\n          AND ');
+
+      const periodRows = (await manager.query(
+        `
+        SELECT
+          TO_CHAR(MIN((viagem.data_inicio AT TIME ZONE 'America/Sao_Paulo')::date), 'YYYY-MM-DD') AS inicio_periodo,
+          TO_CHAR(MAX((viagem.data_inicio AT TIME ZONE 'America/Sao_Paulo')::date), 'YYYY-MM-DD') AS fim_periodo
+        FROM app.viagens viagem
+        WHERE ${whereSql}
+      `,
+        valores,
+      )) as RegistroBanco[];
+
+      const periodRow = periodRows[0] ?? null;
+
+      const filtrosAnosSql = [
+        'viagem.id_empresa = $1',
+        "COALESCE(UPPER(TRIM(viagem.status)), 'A') <> 'I'",
+      ];
+      const valoresAnos: Array<number | string> = [String(idEmpresa)];
+
+      if (filtro.idVeiculo) {
+        valoresAnos.push(filtro.idVeiculo);
+        filtrosAnosSql.push(`viagem.id_veiculo = $${valoresAnos.length}`);
+      }
+
+      if (filtro.idMotorista) {
+        valoresAnos.push(filtro.idMotorista);
+        filtrosAnosSql.push(`viagem.id_motorista = $${valoresAnos.length}`);
+      }
+
+      const whereAnosSql = filtrosAnosSql.join('\n          AND ');
+      const anosRows = (await manager.query(
+        `
+        SELECT DISTINCT
+          EXTRACT(YEAR FROM (viagem.data_inicio AT TIME ZONE 'America/Sao_Paulo'))::int AS ano
+        FROM app.viagens viagem
+        WHERE ${whereAnosSql}
+        ORDER BY ano DESC
+      `,
+        valoresAnos,
+      )) as RegistroBanco[];
+
+      const anosDisponiveis = anosRows
+        .map((row) => this.converterInteiro(row.ano))
+        .filter((ano) => ano > 0);
 
       const rows = (await manager.query(
         `
@@ -748,16 +803,23 @@ export class DashboardService {
       const destaqueViajouMais = rankingViagens[0] ?? null;
       const destaqueMelhorMedia = rankingMedia[0] ?? null;
       const destaqueMaiorGasto = rankingGastos[0] ?? null;
+      const inicioPeriodo =
+        this.converterTexto(periodRow?.inicio_periodo) ?? periodo.inicioEsperado;
+      const fimPeriodo =
+        this.converterTexto(periodRow?.fim_periodo) ?? periodo.fimEsperado;
 
       return {
         sucesso: true,
         periodo: {
-          inicio: this.formatarDataIso(periodo.inicio),
-          fim: this.formatarDataIso(this.adicionarDias(periodo.fimExclusivo, -1)),
+          inicio: inicioPeriodo,
+          fim: fimPeriodo,
           mes: periodo.mes,
           ano: periodo.ano,
         },
+        anosDisponiveis,
         filtrosAplicados: {
+          mes: periodo.mes,
+          ano: periodo.ano,
           idVeiculo: filtro.idVeiculo ?? null,
           idMotorista: filtro.idMotorista ?? null,
           limiteRanking: limite,
@@ -2799,56 +2861,49 @@ export class DashboardService {
   private resolverPeriodoRelatorioMotoristas(
     filtro: FiltroRelatorioMotoristasDto,
   ): PeriodoRelatorioMotoristas {
-    const agora = new Date();
-    const anoInformado =
-      filtro.ano !== undefined ? Number(filtro.ano) : null;
-    const mesInformado =
-      filtro.mes !== undefined ? Number(filtro.mes) : null;
+    const anoInformado = filtro.ano !== undefined ? Number(filtro.ano) : null;
+    const mesInformado = filtro.mes !== undefined ? Number(filtro.mes) : null;
 
     if (anoInformado !== null) {
-      if (!Number.isInteger(anoInformado) || anoInformado < 2000 || anoInformado > 2100) {
+      if (
+        !Number.isInteger(anoInformado) ||
+        anoInformado < 2000 ||
+        anoInformado > 2100
+      ) {
         throw new BadRequestException('ano invalido. Informe no formato YYYY.');
       }
     }
 
     if (mesInformado !== null) {
-      if (!Number.isInteger(mesInformado) || mesInformado < 1 || mesInformado > 12) {
+      if (
+        !Number.isInteger(mesInformado) ||
+        mesInformado < 1 ||
+        mesInformado > 12
+      ) {
         throw new BadRequestException('mes invalido. Informe no formato MM.');
       }
     }
 
-    const anoBase = anoInformado ?? agora.getFullYear();
+    let inicioEsperado: string | null = null;
+    let fimEsperado: string | null = null;
 
-    if (mesInformado !== null) {
-      const inicio = new Date(anoBase, mesInformado - 1, 1);
-      const fimExclusivo = new Date(anoBase, mesInformado, 1);
-      return {
-        inicio: this.inicioDoDia(inicio),
-        fimExclusivo: this.inicioDoDia(fimExclusivo),
-        mes: String(mesInformado).padStart(2, '0'),
-        ano: String(anoBase),
-      };
+    if (anoInformado !== null && mesInformado !== null) {
+      const inicio = new Date(anoInformado, mesInformado - 1, 1);
+      const fim = new Date(anoInformado, mesInformado, 0);
+      inicioEsperado = this.formatarDataLocal(inicio);
+      fimEsperado = this.formatarDataLocal(fim);
+    } else if (anoInformado !== null) {
+      inicioEsperado = `${String(anoInformado).padStart(4, '0')}-01-01`;
+      fimEsperado = `${String(anoInformado).padStart(4, '0')}-12-31`;
     }
-
-    if (anoInformado !== null) {
-      const inicio = new Date(anoBase, 0, 1);
-      const fimExclusivo = new Date(anoBase + 1, 0, 1);
-      return {
-        inicio: this.inicioDoDia(inicio),
-        fimExclusivo: this.inicioDoDia(fimExclusivo),
-        mes: null,
-        ano: String(anoBase),
-      };
-    }
-
-    const inicio = this.inicioDoMes(agora);
-    const fimExclusivo = this.adicionarMeses(inicio, 1);
 
     return {
-      inicio,
-      fimExclusivo,
-      mes: String(agora.getMonth() + 1).padStart(2, '0'),
-      ano: String(agora.getFullYear()),
+      anoNumero: anoInformado,
+      mesNumero: mesInformado,
+      mes: mesInformado !== null ? String(mesInformado).padStart(2, '0') : null,
+      ano: anoInformado !== null ? String(anoInformado) : null,
+      inicioEsperado,
+      fimEsperado,
     };
   }
 
@@ -2893,6 +2948,13 @@ export class DashboardService {
 
   private formatarDataIso(data: Date): string {
     return data.toISOString().slice(0, 10);
+  }
+
+  private formatarDataLocal(data: Date): string {
+    const ano = String(data.getFullYear()).padStart(4, '0');
+    const mes = String(data.getMonth() + 1).padStart(2, '0');
+    const dia = String(data.getDate()).padStart(2, '0');
+    return `${ano}-${mes}-${dia}`;
   }
 
   private arredondar(valor: number, casas = 2): number {
