@@ -26,6 +26,7 @@ import { RequisicaoModule } from './requisicao/requisicao.module';
 import { RelatoriosFaturamentoModule } from './relatorios-faturamento/relatorios-faturamento.module';
 import { RelatoriosAbastecimentoModule } from './relatorios-abastecimento/relatorios-abastecimento.module';
 import { RelatoriosDespesaModule } from './relatorios-despesa/relatorios-despesa.module';
+import { RelatoriosViagemModule } from './relatorios-viagem/relatorios-viagem.module';
 import { TiposVeiculoModule } from './tipos-veiculo/tipos-veiculo.module';
 import { VeiculoModule } from './veiculo/veiculo.module';
 import { ViagensModule } from './viagens/viagens.module';
@@ -93,6 +94,7 @@ import { ViagensModule } from './viagens/viagens.module';
     RelatoriosFaturamentoModule,
     RelatoriosAbastecimentoModule,
     RelatoriosDespesaModule,
+    RelatoriosViagemModule,
     EngateDesengateModule,
     DespesasModule,
     CancelamentosModule,
