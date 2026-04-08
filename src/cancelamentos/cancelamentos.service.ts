@@ -658,15 +658,48 @@ export class CancelamentosService {
     idEmpresa: number,
     idDocumento: number,
   ): Promise<DocumentoConsultado> {
+    const colunasRequisicao = await this.obterColunasTabela(
+      manager,
+      'app',
+      'requisicao',
+    );
+    const colunasOs = await this.obterColunasTabela(
+      manager,
+      'app',
+      'ordem_servico',
+    );
+
+    if (
+      !colunasRequisicao.has('id_requisicao') ||
+      !colunasRequisicao.has('id_os') ||
+      !colunasRequisicao.has('situacao')
+    ) {
+      throw new BadRequestException(
+        'Estrutura da tabela app.requisicao incompleta para reabertura.',
+      );
+    }
+
+    const campoDataRequisicao = colunasRequisicao.has('data_requisicao')
+      ? 'req.data_requisicao'
+      : 'NULL::timestamptz AS data_requisicao';
+    const campoValorTotal = colunasRequisicao.has('valor_total')
+      ? 'req.valor_total'
+      : 'NULL::numeric AS valor_total';
+    const campoSituacaoOs = colunasOs.has('situacao_os')
+      ? 'os.situacao_os'
+      : colunasOs.has('situacao')
+        ? 'os.situacao AS situacao_os'
+        : 'NULL::text AS situacao_os';
+
     const rows = (await manager.query(
       `
         SELECT
           req.id_requisicao,
           req.id_os,
           req.situacao,
-          req.data_requisicao,
-          req.valor_total,
-          os.situacao_os
+          ${campoDataRequisicao},
+          ${campoValorTotal},
+          ${campoSituacaoOs}
         FROM app.requisicao req
         LEFT JOIN app.ordem_servico os
           ON os.id_empresa = req.id_empresa
@@ -789,21 +822,60 @@ export class CancelamentosService {
     documento: DocumentoConsultado,
     usuarioCancelamento: string,
   ): Promise<ReaberturaResultado> {
+    const colunasOs = await this.obterColunasTabela(
+      manager,
+      'app',
+      'ordem_servico',
+    );
+    const colunasRequisicao = await this.obterColunasTabela(
+      manager,
+      'app',
+      'requisicao',
+    );
+
+    const setOs: string[] = [];
+    const paramsOs: Array<string | number> = [
+      String(idEmpresa),
+      documento.idDocumento,
+    ];
+
+    if (colunasOs.has('situacao_os')) {
+      setOs.push(`situacao_os = 'A'`);
+    } else if (colunasOs.has('situacao')) {
+      setOs.push(`situacao = 'A'`);
+    } else {
+      throw new BadRequestException(
+        'Tabela app.ordem_servico sem coluna de situacao para reabertura.',
+      );
+    }
+
+    if (colunasOs.has('data_fechamento')) {
+      setOs.push(`data_fechamento = NULL`);
+    }
+    if (colunasOs.has('tempo_os_min')) {
+      setOs.push(`tempo_os_min = NULL`);
+    }
+    if (colunasOs.has('usuario_atualizacao')) {
+      paramsOs.push(usuarioCancelamento);
+      setOs.push(`usuario_atualizacao = $${paramsOs.length}`);
+    }
+    if (colunasOs.has('data_atualizacao')) {
+      setOs.push(`data_atualizacao = NOW()`);
+    }
+    if (colunasOs.has('atualizado_em')) {
+      setOs.push(`atualizado_em = NOW()`);
+    }
+
     const rows = (await manager.query(
       `
         UPDATE app.ordem_servico
         SET
-          situacao_os = 'A',
-          data_fechamento = NULL,
-          tempo_os_min = NULL,
-          usuario_atualizacao = $3,
-          data_atualizacao = NOW(),
-          atualizado_em = NOW()
+          ${setOs.join(',\n          ')}
         WHERE id_empresa = $1
           AND id_os = $2
         RETURNING id_os
       `,
-      [String(idEmpresa), documento.idDocumento, usuarioCancelamento],
+      paramsOs,
     )) as RegistroBanco[];
 
     if (!rows[0]) {
@@ -812,19 +884,33 @@ export class CancelamentosService {
       );
     }
 
+    const setRequisicao: string[] = [`situacao = 'A'`];
+    const paramsRequisicao: Array<string | number> = [
+      String(idEmpresa),
+      documento.idDocumento,
+    ];
+    if (colunasRequisicao.has('usuario_atualizacao')) {
+      paramsRequisicao.push(usuarioCancelamento);
+      setRequisicao.push(`usuario_atualizacao = $${paramsRequisicao.length}`);
+    }
+    if (colunasRequisicao.has('data_atualizacao')) {
+      setRequisicao.push(`data_atualizacao = NOW()`);
+    }
+    if (colunasRequisicao.has('atualizado_em')) {
+      setRequisicao.push(`atualizado_em = NOW()`);
+    }
+
     const requisicoesReabertas = (await manager.query(
       `
         UPDATE app.requisicao
         SET
-          situacao = 'A',
-          usuario_atualizacao = $3,
-          atualizado_em = NOW()
+          ${setRequisicao.join(',\n          ')}
         WHERE id_empresa = $1
           AND id_os = $2
           AND situacao = 'F'
         RETURNING id_requisicao
       `,
-      [String(idEmpresa), documento.idDocumento, usuarioCancelamento],
+      paramsRequisicao,
     )) as RegistroBanco[];
 
     return {
@@ -840,18 +926,43 @@ export class CancelamentosService {
     documento: DocumentoConsultado,
     usuarioCancelamento: string,
   ): Promise<ReaberturaResultado> {
+    const colunasRequisicao = await this.obterColunasTabela(
+      manager,
+      'app',
+      'requisicao',
+    );
+    if (!colunasRequisicao.has('situacao')) {
+      throw new BadRequestException(
+        'Tabela app.requisicao sem coluna de situacao para reabertura.',
+      );
+    }
+
+    const setRequisicao: string[] = [`situacao = 'A'`];
+    const paramsRequisicao: Array<string | number> = [
+      String(idEmpresa),
+      documento.idDocumento,
+    ];
+    if (colunasRequisicao.has('usuario_atualizacao')) {
+      paramsRequisicao.push(usuarioCancelamento);
+      setRequisicao.push(`usuario_atualizacao = $${paramsRequisicao.length}`);
+    }
+    if (colunasRequisicao.has('data_atualizacao')) {
+      setRequisicao.push(`data_atualizacao = NOW()`);
+    }
+    if (colunasRequisicao.has('atualizado_em')) {
+      setRequisicao.push(`atualizado_em = NOW()`);
+    }
+
     const rows = (await manager.query(
       `
         UPDATE app.requisicao
         SET
-          situacao = 'A',
-          usuario_atualizacao = $3,
-          atualizado_em = NOW()
+          ${setRequisicao.join(',\n          ')}
         WHERE id_empresa = $1
           AND id_requisicao = $2
         RETURNING id_requisicao
       `,
-      [String(idEmpresa), documento.idDocumento, usuarioCancelamento],
+      paramsRequisicao,
     )) as RegistroBanco[];
 
     if (!rows[0]) {
