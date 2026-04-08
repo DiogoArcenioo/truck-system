@@ -39,6 +39,7 @@ type MapaColunasVeiculo = {
   status: string | null;
   idMotoristaAtual: string | null;
   usuarioAtualizacao: string | null;
+  criadoEm: string | null;
 };
 
 type VeiculoPersistencia = {
@@ -789,6 +790,12 @@ export class VeiculoService {
         '',
         false,
       ),
+      criadoEm: this.encontrarColuna(
+        set,
+        ['criado_em', 'data_cadastro', 'created_at'],
+        '',
+        false,
+      ),
     };
   }
 
@@ -1213,6 +1220,10 @@ export class VeiculoService {
           ? this.converterNumero(registro[colunas.anoModelo])
           : null,
       dataVencimento: vencimentoDocumento,
+      criadoEm:
+        colunas.criadoEm !== null
+          ? this.converterData(registro[colunas.criadoEm])
+          : null,
     };
   }
 
@@ -1381,29 +1392,29 @@ export class VeiculoService {
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
-          'Alguma referencia informada (fornecedor, marca, modelo, tipo, cor ou combustivel) nao existe.',
+          'Alguma referência informada (fornecedor, marca, modelo, tipo, cor ou combustível) não existe.',
         );
       }
 
       if (erroPg.code === '23505') {
         throw new BadRequestException(
-          'Ja existe veiculo com a placa informada.',
+          'Já existe veículo com a placa informada.',
         );
       }
 
       if (erroPg.code === '42501') {
         throw new BadRequestException(
-          'Usuario do banco sem permissao para gravar em app.veiculo.',
+          'Usuário do banco sem permissão para gravar em app.veiculo.',
         );
       }
 
       if (erroPg.code === '42P01') {
-        throw new BadRequestException('Tabela app.veiculo nao encontrada.');
+        throw new BadRequestException('Tabela app.veiculo não encontrada.');
       }
 
       if (erroPg.code === '42703') {
         throw new BadRequestException(
-          'Estrutura da tabela app.veiculo esta diferente do esperado.',
+          'Estrutura da tabela app.veiculo está diferente do esperado.',
         );
       }
     }
@@ -1412,7 +1423,7 @@ export class VeiculoService {
       `Falha ao ${acao} veiculo sem codigo SQL mapeado. message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
     );
     throw new BadRequestException(
-      `Nao foi possivel ${acao} o veiculo neste momento.`,
+      `Não foi possível ${acao} o veículo neste momento.`,
     );
   }
 }

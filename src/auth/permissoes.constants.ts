@@ -74,7 +74,7 @@ const moduloMetadata: Record<ModuloSistema, Omit<ModuloMetadata, 'id'>> = {
   },
   pneus: {
     label: 'Pneus',
-    descricao: 'Cadastro, vinculo e movimentacao de pneus da frota.',
+    descricao: 'Cadastro, vínculo e movimentação de pneus da frota.',
   },
   engate_desengate: {
     label: 'Engate e desengate',

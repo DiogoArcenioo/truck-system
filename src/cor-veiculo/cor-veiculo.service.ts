@@ -167,6 +167,74 @@ export class CorVeiculoService {
     });
   }
 
+  async atualizar(
+    idEmpresa: number,
+    idCor: number,
+    dados: CriarCorVeiculoDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (manager, colunas) => {
+        const descricao = this.normalizarDescricao(dados.descricao);
+        const status = this.normalizarStatus(dados.status);
+        const usuarioAtualizacao = this.normalizarUsuario(
+          dados.usuarioAtualizacao ?? usuarioJwt.email,
+        );
+
+        await this.validarDuplicidadeDescricao(
+          manager,
+          colunas,
+          idEmpresa,
+          descricao,
+          idCor,
+        );
+
+        const sets: string[] = [];
+        const valores: Array<string | number> = [];
+        const addSet = (coluna: string, valor: string | number) => {
+          valores.push(valor);
+          sets.push(`${this.quote(coluna)} = $${valores.length}`);
+        };
+
+        addSet(colunas.descricao, descricao);
+        if (colunas.status) addSet(colunas.status, status);
+        if (colunas.usuarioAtualizacao) addSet(colunas.usuarioAtualizacao, usuarioAtualizacao);
+        if (colunas.atualizadoEm) sets.push(`${this.quote(colunas.atualizadoEm)} = NOW()`);
+
+        const filtros: string[] = [];
+        valores.push(idCor);
+        filtros.push(`${this.quote(colunas.idCor)} = $${valores.length}`);
+        if (colunas.idEmpresa) {
+          valores.push(String(idEmpresa));
+          filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+        }
+
+        const rows = await manager.query(
+          `
+            UPDATE app.cor_vei
+            SET ${sets.join(', ')}
+            WHERE ${filtros.join(' AND ')}
+            RETURNING *
+          `,
+          valores,
+        );
+
+        const registro = rows[0];
+        if (!registro) {
+          throw new NotFoundException('Cor de veiculo nao encontrada para a empresa logada.');
+        }
+
+        return {
+          sucesso: true,
+          mensagem: status === 'I' ? 'Cor de veiculo inativada com sucesso.' : 'Cor de veiculo atualizada com sucesso.',
+          cor: this.mapear(registro, colunas),
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error);
+    }
+  }
+
   private async executarComRls<T>(
     idEmpresa: number,
     callback: (
@@ -283,6 +351,7 @@ export class CorVeiculoService {
     colunas: MapaColunasCorVeiculo,
     idEmpresa: number,
     descricao: string,
+    idCorIgnorada?: number,
   ) {
     const filtros: string[] = [
       `UPPER(${this.quote(colunas.descricao)}) = UPPER($1)`,
@@ -292,6 +361,11 @@ export class CorVeiculoService {
     if (colunas.idEmpresa) {
       valores.push(String(idEmpresa));
       filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+    }
+
+    if (idCorIgnorada !== undefined) {
+      valores.push(idCorIgnorada);
+      filtros.push(`${this.quote(colunas.idCor)} <> $${valores.length}`);
     }
 
     const rows = await manager.query(

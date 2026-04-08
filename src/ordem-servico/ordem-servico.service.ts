@@ -807,29 +807,29 @@ export class OrdemServicoService {
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
-          'Veiculo ou fornecedor informado nao existe para a empresa logada.',
+          'Veículo ou fornecedor informado não existe para a empresa logada.',
         );
       }
 
       if (erroPg.code === '23514') {
         throw new BadRequestException(
-          'Dados invalidos para situacao, tipo de servico, valor ou quilometragem.',
+          'Dados inválidos para situação, tipo de serviço, valor ou quilometragem.',
         );
       }
 
       if (erroPg.code === '22P02' || erroPg.code === '22007') {
-        throw new BadRequestException('Formato de numero ou data invalido.');
+        throw new BadRequestException('Formato de número ou data inválido.');
       }
 
       if (erroPg.code === '23502') {
         throw new BadRequestException(
-          'Campos obrigatorios nao foram informados para cadastrar/atualizar a ordem de servico.',
+          'Campos obrigatórios não foram informados para cadastrar/atualizar a ordem de serviço.',
         );
       }
 
       if (erroPg.code === '42501') {
         throw new BadRequestException(
-          'Permissao insuficiente no banco (RLS/sequence). Verifique policy da empresa e grants.',
+          'Permissão insuficiente no banco (RLS/sequence). Verifique policy da empresa e grants.',
         );
       }
 

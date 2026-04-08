@@ -165,7 +165,7 @@ export class PermissoesService {
     const valor = this.normalizarCodigoPerfil(perfil ?? PERFIL_BASE_PADRAO);
     if (!PERFIL_CODIGO_REGEX.test(valor)) {
       throw new BadRequestException(
-        'Perfil invalido. Use de 2 a 40 caracteres com letras, numeros, "_" ou "-".',
+        'Perfil inválido. Use de 2 a 40 caracteres com letras, números, "_" ou "-".',
       );
     }
 
@@ -182,7 +182,7 @@ export class PermissoesService {
         return PERFIL_BASE_PADRAO;
       }
       throw new BadRequestException(
-        'Perfil base invalido. Valores permitidos: ADM, GESTOR, OPERADOR.',
+        'Perfil base inválido. Valores permitidos: ADM, GESTOR, OPERADOR.',
       );
     }
 

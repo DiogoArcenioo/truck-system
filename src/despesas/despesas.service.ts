@@ -1174,7 +1174,7 @@ export class DespesasService {
 
     if (payload.idVeiculo === null && payload.idMotorista === null) {
       throw new BadRequestException(
-        'Informe pelo menos um vinculo: veiculo, motorista ou viagem.',
+        'Informe pelo menos um vínculo: veículo, motorista ou viagem.',
       );
     }
 
@@ -1753,13 +1753,13 @@ export class DespesasService {
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
-          'Veiculo, motorista ou viagem informada nao existe para a empresa.',
+          'Veículo, motorista ou viagem informada não existe para a empresa.',
         );
       }
 
       if (erroPg.code === '23502') {
         throw new BadRequestException(
-          'A estrutura atual da tabela exige campos obrigatorios nao preenchidos para esta despesa.',
+          'A estrutura atual da tabela exige campos obrigatórios não preenchidos para esta despesa.',
         );
       }
 

@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   UnauthorizedException,
@@ -52,6 +53,16 @@ export class ModeloVeiculoController {
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
     return this.modeloVeiculoService.buscarPorId(usuario.idEmpresa, idModelo);
+  }
+
+  @Put(':idModelo')
+  async atualizar(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idModelo', ParseIntPipe) idModelo: number,
+    @Body() dados: CriarModeloVeiculoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.modeloVeiculoService.atualizar(usuario.idEmpresa, idModelo, dados, usuario);
   }
 
   private obterUsuarioAutenticado(
