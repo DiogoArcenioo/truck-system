@@ -99,6 +99,11 @@ type AcumuladorMediaVeiculo = {
   kmTotalViagens: number;
 };
 
+type FiltrosRelacionados = {
+  idVeiculo?: number;
+  idMotorista?: number;
+};
+
 const colunasAbastecimentos: ColunaTabela[] = [
   { chave: 'idAbastecimento', label: 'Abastecimento', tipo: 'numero' },
   { chave: 'dataAbastecimento', label: 'Data', tipo: 'data' },
@@ -172,21 +177,27 @@ export class RelatoriosAbastecimentoService {
     filtro: FiltroRelatorioAbastecimentoDto,
   ) {
     const periodo = this.resolverPeriodo(filtro);
+    const filtrosRelacionados = this.extrairFiltrosRelacionados(filtro);
     const [abastecimentos, viagens] = await Promise.all([
-      this.carregarAbastecimentosPeriodo(idEmpresa, periodo),
-      this.carregarViagensParaVinculo(idEmpresa, periodo),
+      this.carregarAbastecimentosPeriodo(idEmpresa, periodo, filtrosRelacionados),
+      this.carregarViagensParaVinculo(idEmpresa, periodo, filtrosRelacionados),
     ]);
 
     const vinculos = this.vincularAbastecimentosComViagens(
       abastecimentos,
       viagens,
     );
-    const resumo = this.calcularResumo(abastecimentos);
-    const tabelaAbastecimentos = this.montarTabelaAbastecimentos(
+    const abastecimentosFiltrados = this.aplicarFiltroMotorista(
       abastecimentos,
       vinculos,
+      filtrosRelacionados.idMotorista,
     );
-    const medias = this.montarTabelasMedias(abastecimentos, vinculos);
+    const resumo = this.calcularResumo(abastecimentosFiltrados);
+    const tabelaAbastecimentos = this.montarTabelaAbastecimentos(
+      abastecimentosFiltrados,
+      vinculos,
+    );
+    const medias = this.montarTabelasMedias(abastecimentosFiltrados, vinculos);
 
     return {
       sucesso: true,
@@ -206,6 +217,7 @@ export class RelatoriosAbastecimentoService {
   private async carregarAbastecimentosPeriodo(
     idEmpresa: number,
     periodo: PeriodoRelatorio,
+    filtrosRelacionados: FiltrosRelacionados,
   ): Promise<AbastecimentoRelatorio[]> {
     const dados: AbastecimentoRelatorio[] = [];
     let pagina = 1;
@@ -217,6 +229,7 @@ export class RelatoriosAbastecimentoService {
         {
           dataDe: periodo.inicioData,
           dataAte: periodo.fimData,
+          idVeiculo: filtrosRelacionados.idVeiculo,
           pagina,
           limite: this.limitePaginacao,
           ordenarPor: 'data_abastecimento',
@@ -238,6 +251,7 @@ export class RelatoriosAbastecimentoService {
   private async carregarViagensParaVinculo(
     idEmpresa: number,
     periodo: PeriodoRelatorio,
+    filtrosRelacionados: FiltrosRelacionados,
   ): Promise<ViagemRelatorio[]> {
     const inicioJanela = new Date(periodo.inicio);
     inicioJanela.setUTCDate(inicioJanela.getUTCDate() - this.janelaDiasViagens);
@@ -247,10 +261,14 @@ export class RelatoriosAbastecimentoService {
       this.carregarViagensComFiltro(idEmpresa, {
         dataInicioDe: inicioJanelaData,
         dataInicioAte: periodo.fimData,
+        idVeiculo: filtrosRelacionados.idVeiculo,
+        idMotorista: filtrosRelacionados.idMotorista,
       }),
       this.carregarViagensComFiltro(idEmpresa, {
         dataInicioAte: periodo.fimData,
         apenasAbertas: true,
+        idVeiculo: filtrosRelacionados.idVeiculo,
+        idMotorista: filtrosRelacionados.idMotorista,
       }),
     ]);
 
@@ -271,6 +289,8 @@ export class RelatoriosAbastecimentoService {
       dataInicioDe?: string;
       dataInicioAte?: string;
       apenasAbertas?: boolean;
+      idVeiculo?: number;
+      idMotorista?: number;
     },
   ): Promise<ViagemRelatorio[]> {
     const dados: ViagemRelatorio[] = [];
@@ -282,6 +302,8 @@ export class RelatoriosAbastecimentoService {
         dataInicioDe: filtro.dataInicioDe,
         dataInicioAte: filtro.dataInicioAte,
         apenasAbertas: filtro.apenasAbertas,
+        idVeiculo: filtro.idVeiculo,
+        idMotorista: filtro.idMotorista,
         pagina,
         limite: this.limitePaginacao,
         ordenarPor: 'data_inicio',
@@ -390,6 +412,22 @@ export class RelatoriosAbastecimentoService {
     }
 
     return vinculos;
+  }
+
+  private aplicarFiltroMotorista(
+    abastecimentos: AbastecimentoRelatorio[],
+    vinculos: Map<number, VinculoAbastecimento>,
+    idMotorista?: number,
+  ) {
+    if (!idMotorista || idMotorista <= 0) {
+      return abastecimentos;
+    }
+
+    return abastecimentos.filter((abastecimento) => {
+      const idAbastecimento = this.converterInteiro(abastecimento.idAbastecimento);
+      const vinculo = vinculos.get(idAbastecimento);
+      return (vinculo?.idMotorista ?? null) === idMotorista;
+    });
   }
 
   private calcularResumo(abastecimentos: AbastecimentoRelatorio[]) {
@@ -765,6 +803,19 @@ export class RelatoriosAbastecimentoService {
       inicioData: inicio.toISOString().slice(0, 10),
       fimData: fim.toISOString().slice(0, 10),
       descricao: `${String(mes).padStart(2, '0')}/${ano}`,
+    };
+  }
+
+  private extrairFiltrosRelacionados(filtro: {
+    idVeiculo?: number;
+    idMotorista?: number;
+  }): FiltrosRelacionados {
+    const idVeiculo = this.converterInteiro(filtro.idVeiculo);
+    const idMotorista = this.converterInteiro(filtro.idMotorista);
+
+    return {
+      idVeiculo: idVeiculo > 0 ? idVeiculo : undefined,
+      idMotorista: idMotorista > 0 ? idMotorista : undefined,
     };
   }
 

@@ -15,4 +15,16 @@ export class FiltroRelatorioDespesaDto {
   @Min(2000)
   @Max(2100)
   ano?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  idVeiculo?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  idMotorista?: number;
 }

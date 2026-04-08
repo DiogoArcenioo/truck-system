@@ -49,6 +49,11 @@ type AcumuladorTipo = {
   quantidade: number;
 };
 
+type FiltrosRelacionados = {
+  idVeiculo?: number;
+  idMotorista?: number;
+};
+
 const colunasLancamentos: ColunaTabela[] = [
   { chave: 'idDespesa', label: 'Despesa', tipo: 'numero' },
   { chave: 'data', label: 'Data', tipo: 'data' },
@@ -72,7 +77,12 @@ export class RelatoriosDespesaService {
     filtro: FiltroRelatorioDespesaDto,
   ) {
     const periodo = this.resolverPeriodo(filtro);
-    const despesas = await this.carregarDespesasPeriodo(idEmpresa, periodo);
+    const filtrosRelacionados = this.extrairFiltrosRelacionados(filtro);
+    const despesas = await this.carregarDespesasPeriodo(
+      idEmpresa,
+      periodo,
+      filtrosRelacionados,
+    );
 
     const totalGasto = this.arredondar(
       despesas.reduce((acumulado, despesa) => {
@@ -172,6 +182,7 @@ export class RelatoriosDespesaService {
   private async carregarDespesasPeriodo(
     idEmpresa: number,
     periodo: PeriodoRelatorio,
+    filtrosRelacionados: FiltrosRelacionados,
   ): Promise<DespesaRelatorio[]> {
     const despesas: DespesaRelatorio[] = [];
     let pagina = 1;
@@ -181,6 +192,8 @@ export class RelatoriosDespesaService {
       const resultado = (await this.despesasService.listarComFiltro(idEmpresa, {
         dataDe: periodo.inicioIso,
         dataAte: periodo.fimIso,
+        idVeiculo: filtrosRelacionados.idVeiculo,
+        idMotorista: filtrosRelacionados.idMotorista,
         situacao: 'ATIVO',
         pagina,
         limite: this.limiteConsulta,
@@ -214,6 +227,19 @@ export class RelatoriosDespesaService {
       inicioData: inicio.toISOString().slice(0, 10),
       fimData: fim.toISOString().slice(0, 10),
       descricao: `${String(mes).padStart(2, '0')}/${ano}`,
+    };
+  }
+
+  private extrairFiltrosRelacionados(filtro: {
+    idVeiculo?: number;
+    idMotorista?: number;
+  }): FiltrosRelacionados {
+    const idVeiculo = this.converterInteiro(filtro.idVeiculo);
+    const idMotorista = this.converterInteiro(filtro.idMotorista);
+
+    return {
+      idVeiculo: idVeiculo > 0 ? idVeiculo : undefined,
+      idMotorista: idMotorista > 0 ? idMotorista : undefined,
     };
   }
 

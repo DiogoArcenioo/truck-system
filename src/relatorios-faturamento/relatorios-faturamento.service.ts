@@ -100,6 +100,11 @@ type PeriodoSerieMensal = {
   totalMeses: number;
 };
 
+type FiltrosRelacionados = {
+  idVeiculo?: number;
+  idMotorista?: number;
+};
+
 @Injectable()
 export class RelatoriosFaturamentoService {
   private readonly limiteViagens = 100;
@@ -117,7 +122,12 @@ export class RelatoriosFaturamentoService {
     filtro: FiltroRelatorioFaturamentoDto,
   ) {
     const periodo = this.resolverPeriodo(filtro);
-    const totais = await this.carregarTotaisPeriodo(idEmpresa, periodo);
+    const filtrosRelacionados = this.extrairFiltrosRelacionados(filtro);
+    const totais = await this.carregarTotaisPeriodo(
+      idEmpresa,
+      periodo,
+      filtrosRelacionados,
+    );
 
     return {
       sucesso: true,
@@ -158,16 +168,19 @@ export class RelatoriosFaturamentoService {
     filtro: FiltroSerieRelatorioFaturamentoDto,
   ) {
     const periodoSerie = this.resolverPeriodoSerieMensal(filtro);
+    const filtrosRelacionados = this.extrairFiltrosRelacionados(filtro);
     const [viagens, despesas] = await Promise.all([
       this.carregarViagensNoIntervalo(
         idEmpresa,
         periodoSerie.inicioData,
         periodoSerie.fimData,
+        filtrosRelacionados,
       ),
       this.carregarDespesasNoIntervalo(
         idEmpresa,
         periodoSerie.inicioData,
         periodoSerie.fimData,
+        filtrosRelacionados,
       ),
     ]);
 
@@ -233,11 +246,18 @@ export class RelatoriosFaturamentoService {
     filtro: DetalheRelatorioFaturamentoDto,
   ) {
     const periodo = this.resolverPeriodo(filtro);
+    const filtrosRelacionados = this.extrairFiltrosRelacionados(filtro);
 
     if (filtro.indicador === 'faturamento') {
       const [totaisViagens, paginaViagens] = await Promise.all([
-        this.carregarTotaisViagensPeriodo(idEmpresa, periodo),
-        this.carregarPaginaViagens(idEmpresa, periodo, filtro.pagina, filtro.limite),
+        this.carregarTotaisViagensPeriodo(idEmpresa, periodo, filtrosRelacionados),
+        this.carregarPaginaViagens(
+          idEmpresa,
+          periodo,
+          filtro.pagina,
+          filtro.limite,
+          filtrosRelacionados,
+        ),
       ]);
 
       return {
@@ -269,12 +289,13 @@ export class RelatoriosFaturamentoService {
 
     if (filtro.indicador === 'despesas') {
       const [totaisDespesas, paginaDespesas] = await Promise.all([
-        this.carregarTotaisDespesasPeriodo(idEmpresa, periodo),
+        this.carregarTotaisDespesasPeriodo(idEmpresa, periodo, filtrosRelacionados),
         this.carregarPaginaDespesas(
           idEmpresa,
           periodo,
           filtro.pagina,
           filtro.limite,
+          filtrosRelacionados,
         ),
       ]);
 
@@ -307,9 +328,21 @@ export class RelatoriosFaturamentoService {
     }
 
     const [totais, paginaViagens, paginaDespesas] = await Promise.all([
-      this.carregarTotaisPeriodo(idEmpresa, periodo),
-      this.carregarPaginaViagens(idEmpresa, periodo, filtro.pagina, filtro.limite),
-      this.carregarPaginaDespesas(idEmpresa, periodo, filtro.pagina, filtro.limite),
+      this.carregarTotaisPeriodo(idEmpresa, periodo, filtrosRelacionados),
+      this.carregarPaginaViagens(
+        idEmpresa,
+        periodo,
+        filtro.pagina,
+        filtro.limite,
+        filtrosRelacionados,
+      ),
+      this.carregarPaginaDespesas(
+        idEmpresa,
+        periodo,
+        filtro.pagina,
+        filtro.limite,
+        filtrosRelacionados,
+      ),
     ]);
 
     return {
@@ -351,10 +384,11 @@ export class RelatoriosFaturamentoService {
   private async carregarTotaisPeriodo(
     idEmpresa: number,
     periodo: PeriodoRelatorio,
+    filtrosRelacionados: FiltrosRelacionados,
   ): Promise<TotaisPeriodo> {
     const [totaisViagens, totaisDespesas] = await Promise.all([
-      this.carregarTotaisViagensPeriodo(idEmpresa, periodo),
-      this.carregarTotaisDespesasPeriodo(idEmpresa, periodo),
+      this.carregarTotaisViagensPeriodo(idEmpresa, periodo, filtrosRelacionados),
+      this.carregarTotaisDespesasPeriodo(idEmpresa, periodo, filtrosRelacionados),
     ]);
 
     const totalFaturado = this.arredondar(totaisViagens.valor);
@@ -373,6 +407,7 @@ export class RelatoriosFaturamentoService {
     idEmpresa: number,
     dataInicio: string,
     dataFim: string,
+    filtrosRelacionados: FiltrosRelacionados,
   ): Promise<ViagemRelatorio[]> {
     const viagens: ViagemRelatorio[] = [];
     let pagina = 1;
@@ -382,6 +417,8 @@ export class RelatoriosFaturamentoService {
       const resultado = (await this.viagensService.listarComFiltro(idEmpresa, {
         dataInicioDe: dataInicio,
         dataInicioAte: dataFim,
+        idVeiculo: filtrosRelacionados.idVeiculo,
+        idMotorista: filtrosRelacionados.idMotorista,
         pagina,
         limite: this.limiteViagens,
         ordenarPor: 'data_inicio',
@@ -400,6 +437,7 @@ export class RelatoriosFaturamentoService {
     idEmpresa: number,
     dataInicio: string,
     dataFim: string,
+    filtrosRelacionados: FiltrosRelacionados,
   ): Promise<DespesaRelatorio[]> {
     const despesas: DespesaRelatorio[] = [];
     let pagina = 1;
@@ -409,6 +447,8 @@ export class RelatoriosFaturamentoService {
       const resultado = (await this.despesasService.listarComFiltro(idEmpresa, {
         dataDe: dataInicio,
         dataAte: dataFim,
+        idVeiculo: filtrosRelacionados.idVeiculo,
+        idMotorista: filtrosRelacionados.idMotorista,
         situacao: 'ATIVO',
         pagina,
         limite: this.limiteDespesas,
@@ -427,6 +467,7 @@ export class RelatoriosFaturamentoService {
   private async carregarTotaisViagensPeriodo(
     idEmpresa: number,
     periodo: PeriodoRelatorio,
+    filtrosRelacionados: FiltrosRelacionados,
   ): Promise<{ valor: number; quantidade: number }> {
     let pagina = 1;
     let totalPaginas = 1;
@@ -437,6 +478,8 @@ export class RelatoriosFaturamentoService {
       const resultado = (await this.viagensService.listarComFiltro(idEmpresa, {
         dataInicioDe: periodo.inicioIso,
         dataInicioAte: periodo.fimIso,
+        idVeiculo: filtrosRelacionados.idVeiculo,
+        idMotorista: filtrosRelacionados.idMotorista,
         pagina,
         limite: this.limiteViagens,
         ordenarPor: 'data_inicio',
@@ -463,6 +506,7 @@ export class RelatoriosFaturamentoService {
   private async carregarTotaisDespesasPeriodo(
     idEmpresa: number,
     periodo: PeriodoRelatorio,
+    filtrosRelacionados: FiltrosRelacionados,
   ): Promise<{ valor: number; quantidade: number }> {
     let pagina = 1;
     let totalPaginas = 1;
@@ -473,6 +517,8 @@ export class RelatoriosFaturamentoService {
       const resultado = (await this.despesasService.listarComFiltro(idEmpresa, {
         dataDe: periodo.inicioIso,
         dataAte: periodo.fimIso,
+        idVeiculo: filtrosRelacionados.idVeiculo,
+        idMotorista: filtrosRelacionados.idMotorista,
         situacao: 'ATIVO',
         pagina,
         limite: this.limiteDespesas,
@@ -504,10 +550,13 @@ export class RelatoriosFaturamentoService {
     periodo: PeriodoRelatorio,
     pagina: number,
     limite: number,
+    filtrosRelacionados: FiltrosRelacionados,
   ) {
     const resultado = (await this.viagensService.listarComFiltro(idEmpresa, {
       dataInicioDe: periodo.inicioIso,
       dataInicioAte: periodo.fimIso,
+      idVeiculo: filtrosRelacionados.idVeiculo,
+      idMotorista: filtrosRelacionados.idMotorista,
       pagina,
       limite,
       ordenarPor: 'data_inicio',
@@ -528,10 +577,13 @@ export class RelatoriosFaturamentoService {
     periodo: PeriodoRelatorio,
     pagina: number,
     limite: number,
+    filtrosRelacionados: FiltrosRelacionados,
   ) {
     const resultado = (await this.despesasService.listarComFiltro(idEmpresa, {
       dataDe: periodo.inicioIso,
       dataAte: periodo.fimIso,
+      idVeiculo: filtrosRelacionados.idVeiculo,
+      idMotorista: filtrosRelacionados.idMotorista,
       situacao: 'ATIVO',
       pagina,
       limite,
@@ -730,6 +782,19 @@ export class RelatoriosFaturamentoService {
       inicio: periodo.inicioData,
       fim: periodo.fimData,
       descricao: periodo.descricao,
+    };
+  }
+
+  private extrairFiltrosRelacionados(filtro: {
+    idVeiculo?: number;
+    idMotorista?: number;
+  }): FiltrosRelacionados {
+    const idVeiculo = this.converterInteiro(filtro.idVeiculo);
+    const idMotorista = this.converterInteiro(filtro.idMotorista);
+
+    return {
+      idVeiculo: idVeiculo > 0 ? idVeiculo : undefined,
+      idMotorista: idMotorista > 0 ? idMotorista : undefined,
     };
   }
 
