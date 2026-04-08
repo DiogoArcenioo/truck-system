@@ -23,6 +23,8 @@ import { ProdutoModule } from './produto/produto.module';
 import { ProdutoReferenciasModule } from './produto-referencias/produto-referencias.module';
 import { PneusModule } from './pneus/pneus.module';
 import { RequisicaoModule } from './requisicao/requisicao.module';
+import { RelatoriosFaturamentoModule } from './relatorios-faturamento/relatorios-faturamento.module';
+import { RelatoriosAbastecimentoModule } from './relatorios-abastecimento/relatorios-abastecimento.module';
 import { TiposVeiculoModule } from './tipos-veiculo/tipos-veiculo.module';
 import { VeiculoModule } from './veiculo/veiculo.module';
 import { ViagensModule } from './viagens/viagens.module';
@@ -87,6 +89,8 @@ import { ViagensModule } from './viagens/viagens.module';
     RequisicaoModule,
     TiposVeiculoModule,
     DashboardModule,
+    RelatoriosFaturamentoModule,
+    RelatoriosAbastecimentoModule,
     EngateDesengateModule,
     DespesasModule,
     CancelamentosModule,

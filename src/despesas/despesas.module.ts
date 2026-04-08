@@ -6,5 +6,6 @@ import { DespesasService } from './despesas.service';
 @Module({
   controllers: [DespesasController],
   providers: [DespesasService, JwtAuthGuard],
+  exports: [DespesasService],
 })
 export class DespesasModule {}

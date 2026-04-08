@@ -9,5 +9,6 @@ import { ViagensService } from './viagens.service';
   imports: [TypeOrmModule.forFeature([ViagemEntity])],
   controllers: [ViagensController],
   providers: [ViagensService, JwtAuthGuard],
+  exports: [ViagensService],
 })
 export class ViagensModule {}
