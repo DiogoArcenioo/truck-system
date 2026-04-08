@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { QueryFailedError } from 'typeorm';
 import { FiltroDashboardDto } from './dto/filtro-dashboard.dto';
+import { FiltroRelatorioMotoristasDto } from './dto/filtro-relatorio-motoristas.dto';
 import { DashboardService } from './dashboard.service';
 
 type RequisicaoAutenticada = {
@@ -84,6 +85,34 @@ export class DashboardController {
 
       throw new InternalServerErrorException(
         `Falha inesperada ao detalhar indicador. DEBUG: ${detalhe}`,
+      );
+    }
+  }
+
+  @Get('relatorios/motoristas')
+  async obterRelatorioMotoristas(
+    @Req() request: RequisicaoAutenticada,
+    @Query() filtro: FiltroRelatorioMotoristasDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    try {
+      return await this.dashboardService.obterRelatorioMotoristas(
+        usuario.idEmpresa,
+        filtro,
+      );
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      const detalhe = this.descreverErro(error);
+      this.logger.error(
+        `Erro inesperado ao carregar relatorio de motoristas. empresa=${usuario.idEmpresa}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new InternalServerErrorException(
+        `Falha inesperada ao carregar relatorio de motoristas. DEBUG: ${detalhe}`,
       );
     }
   }
