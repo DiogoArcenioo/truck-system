@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { configurarContextoEmpresaRls } from '../common/database/rls.util';
 import { FiltroDashboardDto } from './dto/filtro-dashboard.dto';
+import { FiltroRelatorioMotoristasDto } from './dto/filtro-relatorio-motoristas.dto';
 
 type RegistroBanco = Record<string, unknown>;
 
@@ -83,6 +84,28 @@ type ResumoAlertas = {
   documentosVeiculoVencidos: number;
   documentosVeiculoVencendo: number;
   osAbertasCriticas: number;
+};
+
+type PeriodoRelatorioMotoristas = {
+  inicio: Date;
+  fimExclusivo: Date;
+  mes: string | null;
+  ano: string;
+};
+
+type LinhaRelatorioMotorista = {
+  idMotorista: number;
+  nome: string;
+  totalViagens: number;
+  viagensFechadas: number;
+  kmRodado: number;
+  mediaConsumo: number;
+  mediasValidas: number;
+  faturamento: number;
+  custoTotal: number;
+  margem: number;
+  ticketMedio: number;
+  taxaConclusao: number;
 };
 
 type IndicadorExplicacaoId =
@@ -560,6 +583,213 @@ export class DashboardService {
             documentoVeiculo: alertasDocumentoVeiculoDetalhes,
             osAbertasAntigas,
           },
+        },
+      };
+    });
+  }
+
+  async obterRelatorioMotoristas(
+    idEmpresa: number,
+    filtro: FiltroRelatorioMotoristasDto,
+  ) {
+    const periodo = this.resolverPeriodoRelatorioMotoristas(filtro);
+    const limite = filtro.limite ?? 15;
+
+    return this.executarComRls(idEmpresa, async (manager) => {
+      const filtrosSql = [
+        'viagem.id_empresa = $1',
+        "COALESCE(UPPER(TRIM(viagem.status)), 'A') <> 'I'",
+        'viagem.data_inicio >= $2::timestamptz',
+        'viagem.data_inicio < $3::timestamptz',
+      ];
+      const valores: Array<number | string> = [
+        String(idEmpresa),
+        periodo.inicio.toISOString(),
+        periodo.fimExclusivo.toISOString(),
+      ];
+
+      if (filtro.idVeiculo) {
+        valores.push(filtro.idVeiculo);
+        filtrosSql.push(`viagem.id_veiculo = $${valores.length}`);
+      }
+
+      if (filtro.idMotorista) {
+        valores.push(filtro.idMotorista);
+        filtrosSql.push(`viagem.id_motorista = $${valores.length}`);
+      }
+
+      const whereSql = filtrosSql.join('\n          AND ');
+
+      const rows = (await manager.query(
+        `
+        SELECT
+          viagem.id_motorista,
+          COALESCE(motorista.nome, 'SEM NOME') AS nome,
+          COUNT(1)::int AS total_viagens,
+          COUNT(1) FILTER (WHERE viagem.data_fim IS NOT NULL)::int AS viagens_fechadas,
+          COALESCE(
+            SUM(
+              COALESCE(
+                viagem.total_km::numeric,
+                GREATEST(COALESCE(viagem.km_final, viagem.km_inicial) - viagem.km_inicial, 0)::numeric
+              )
+            ),
+            0
+          )::numeric AS km_rodado,
+          COALESCE(
+            AVG(NULLIF(COALESCE(viagem.media, 0)::numeric, 0)),
+            0
+          )::numeric AS media_consumo,
+          COUNT(1) FILTER (WHERE COALESCE(viagem.media, 0) > 0)::int AS medias_validas,
+          COALESCE(SUM(COALESCE(viagem.valor_frete, 0)::numeric), 0)::numeric AS faturamento,
+          COALESCE(
+            SUM(
+              COALESCE(viagem.total_abastecimentos, 0)::numeric +
+              COALESCE(viagem.total_despesas, 0)::numeric
+            ),
+            0
+          )::numeric AS custo_total
+        FROM app.viagens viagem
+        LEFT JOIN app.motoristas motorista
+          ON motorista.id_empresa = viagem.id_empresa
+         AND motorista.id_motorista = viagem.id_motorista
+        WHERE ${whereSql}
+        GROUP BY viagem.id_motorista, motorista.nome
+      `,
+        valores,
+      )) as RegistroBanco[];
+
+      const motoristas = rows.map<LinhaRelatorioMotorista>((row) => {
+        const totalViagens = this.converterInteiro(row.total_viagens);
+        const viagensFechadas = this.converterInteiro(row.viagens_fechadas);
+        const faturamento = this.arredondar(this.converterNumero(row.faturamento));
+        const custoTotal = this.arredondar(this.converterNumero(row.custo_total));
+
+        return {
+          idMotorista: this.converterInteiro(row.id_motorista),
+          nome: this.converterTexto(row.nome) ?? 'SEM NOME',
+          totalViagens,
+          viagensFechadas,
+          kmRodado: this.arredondar(this.converterNumero(row.km_rodado), 1),
+          mediaConsumo: this.arredondar(this.converterNumero(row.media_consumo), 3),
+          mediasValidas: this.converterInteiro(row.medias_validas),
+          faturamento,
+          custoTotal,
+          margem: this.arredondar(faturamento - custoTotal),
+          ticketMedio:
+            totalViagens > 0 ? this.arredondar(faturamento / totalViagens) : 0,
+          taxaConclusao:
+            totalViagens > 0
+              ? this.arredondar((viagensFechadas / totalViagens) * 100, 2)
+              : 0,
+        };
+      });
+
+      const ordenar = (
+        lista: LinhaRelatorioMotorista[],
+        seletor: (item: LinhaRelatorioMotorista) => number,
+      ) =>
+        [...lista].sort((a, b) => {
+          const valor = seletor(b) - seletor(a);
+          if (valor !== 0) {
+            return valor;
+          }
+          if (b.totalViagens !== a.totalViagens) {
+            return b.totalViagens - a.totalViagens;
+          }
+          return a.nome.localeCompare(b.nome, 'pt-BR');
+        });
+
+      const rankingViagens = ordenar(motoristas, (item) => item.totalViagens).slice(
+        0,
+        limite,
+      );
+      const rankingKm = ordenar(motoristas, (item) => item.kmRodado).slice(0, limite);
+      const rankingFaturamento = ordenar(
+        motoristas,
+        (item) => item.faturamento,
+      ).slice(0, limite);
+      const rankingGastos = ordenar(motoristas, (item) => item.custoTotal).slice(
+        0,
+        limite,
+      );
+      const rankingMedia = ordenar(
+        motoristas.filter((item) => item.mediasValidas > 0 && item.mediaConsumo > 0),
+        (item) => item.mediaConsumo,
+      ).slice(0, limite);
+
+      const resumoBase = motoristas.reduce(
+        (acc, item) => {
+          acc.totalViagens += item.totalViagens;
+          acc.viagensFechadas += item.viagensFechadas;
+          acc.kmRodado += item.kmRodado;
+          acc.faturamento += item.faturamento;
+          acc.custoTotal += item.custoTotal;
+          acc.mediasValidas += item.mediasValidas;
+          acc.somaMediaPonderada += item.mediaConsumo * item.mediasValidas;
+          return acc;
+        },
+        {
+          totalViagens: 0,
+          viagensFechadas: 0,
+          kmRodado: 0,
+          faturamento: 0,
+          custoTotal: 0,
+          mediasValidas: 0,
+          somaMediaPonderada: 0,
+        },
+      );
+
+      const mediaConsumoGeral =
+        resumoBase.mediasValidas > 0
+          ? resumoBase.somaMediaPonderada / resumoBase.mediasValidas
+          : 0;
+
+      const destaqueViajouMais = rankingViagens[0] ?? null;
+      const destaqueMelhorMedia = rankingMedia[0] ?? null;
+      const destaqueMaiorGasto = rankingGastos[0] ?? null;
+
+      return {
+        sucesso: true,
+        periodo: {
+          inicio: this.formatarDataIso(periodo.inicio),
+          fim: this.formatarDataIso(this.adicionarDias(periodo.fimExclusivo, -1)),
+          mes: periodo.mes,
+          ano: periodo.ano,
+        },
+        filtrosAplicados: {
+          idVeiculo: filtro.idVeiculo ?? null,
+          idMotorista: filtro.idMotorista ?? null,
+          limiteRanking: limite,
+        },
+        resumo: {
+          motoristasComMovimento: motoristas.length,
+          totalViagens: resumoBase.totalViagens,
+          viagensFechadas: resumoBase.viagensFechadas,
+          kmRodado: this.arredondar(resumoBase.kmRodado, 1),
+          faturamento: this.arredondar(resumoBase.faturamento),
+          custoTotal: this.arredondar(resumoBase.custoTotal),
+          margem: this.arredondar(resumoBase.faturamento - resumoBase.custoTotal),
+          mediaConsumo: this.arredondar(mediaConsumoGeral, 3),
+          taxaConclusao:
+            resumoBase.totalViagens > 0
+              ? this.arredondar(
+                  (resumoBase.viagensFechadas / resumoBase.totalViagens) * 100,
+                  2,
+                )
+              : 0,
+        },
+        destaques: {
+          viajouMais: destaqueViajouMais,
+          melhorMedia: destaqueMelhorMedia,
+          maiorGasto: destaqueMaiorGasto,
+        },
+        ranking: {
+          viagens: rankingViagens,
+          km: rankingKm,
+          faturamento: rankingFaturamento,
+          gastos: rankingGastos,
+          media: rankingMedia,
         },
       };
     });
@@ -2563,6 +2793,62 @@ export class DashboardService {
       limiteRanking: filtro.limiteRanking ?? 5,
       diasAlertaDocumentos: filtro.diasAlertaDocumentos ?? 30,
       diasOsAbertasCriticas: filtro.diasOsAbertasCriticas ?? 7,
+    };
+  }
+
+  private resolverPeriodoRelatorioMotoristas(
+    filtro: FiltroRelatorioMotoristasDto,
+  ): PeriodoRelatorioMotoristas {
+    const agora = new Date();
+    const anoInformado =
+      filtro.ano !== undefined ? Number(filtro.ano) : null;
+    const mesInformado =
+      filtro.mes !== undefined ? Number(filtro.mes) : null;
+
+    if (anoInformado !== null) {
+      if (!Number.isInteger(anoInformado) || anoInformado < 2000 || anoInformado > 2100) {
+        throw new BadRequestException('ano invalido. Informe no formato YYYY.');
+      }
+    }
+
+    if (mesInformado !== null) {
+      if (!Number.isInteger(mesInformado) || mesInformado < 1 || mesInformado > 12) {
+        throw new BadRequestException('mes invalido. Informe no formato MM.');
+      }
+    }
+
+    const anoBase = anoInformado ?? agora.getFullYear();
+
+    if (mesInformado !== null) {
+      const inicio = new Date(anoBase, mesInformado - 1, 1);
+      const fimExclusivo = new Date(anoBase, mesInformado, 1);
+      return {
+        inicio: this.inicioDoDia(inicio),
+        fimExclusivo: this.inicioDoDia(fimExclusivo),
+        mes: String(mesInformado).padStart(2, '0'),
+        ano: String(anoBase),
+      };
+    }
+
+    if (anoInformado !== null) {
+      const inicio = new Date(anoBase, 0, 1);
+      const fimExclusivo = new Date(anoBase + 1, 0, 1);
+      return {
+        inicio: this.inicioDoDia(inicio),
+        fimExclusivo: this.inicioDoDia(fimExclusivo),
+        mes: null,
+        ano: String(anoBase),
+      };
+    }
+
+    const inicio = this.inicioDoMes(agora);
+    const fimExclusivo = this.adicionarMeses(inicio, 1);
+
+    return {
+      inicio,
+      fimExclusivo,
+      mes: String(agora.getMonth() + 1).padStart(2, '0'),
+      ano: String(agora.getFullYear()),
     };
   }
 

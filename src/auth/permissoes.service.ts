@@ -77,6 +77,10 @@ const ROTAS_SISTEMA_POR_MODULO: Array<{
   prefixos: string[];
   modulos: ModuloSistema[];
 }> = [
+  {
+    prefixos: ['/api/dashboard/relatorios', '/api/sistema/dashboard/relatorios'],
+    modulos: ['relatorios'],
+  },
   { prefixos: ['/api/dashboard', '/api/sistema/dashboard'], modulos: ['home'] },
   { prefixos: ['/api/viagens', '/api/sistema/viagens'], modulos: ['viagens'] },
   {
