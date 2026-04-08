@@ -212,6 +212,7 @@ export class RelatoriosFaturamentoService {
       return {
         mes,
         faturamento,
+        custos: totalDespesas,
         lucroLiquido: this.arredondar(faturamento - totalDespesas),
       };
     });
