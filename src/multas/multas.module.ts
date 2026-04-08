@@ -6,5 +6,6 @@ import { MultasService } from './multas.service';
 @Module({
   controllers: [MultasController],
   providers: [MultasService, JwtAuthGuard],
+  exports: [MultasService],
 })
 export class MultasModule {}
