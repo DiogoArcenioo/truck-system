@@ -534,18 +534,18 @@ export class ProdutoService {
 
       if (erroPg.code === '23505') {
         throw new BadRequestException(
-          'Ja existe produto com essa descricao para a empresa.',
+          'Já existe produto com essa descrição para a empresa.',
         );
       }
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
-          'Grupo, subgrupo, marca ou unidade informada nao existe.',
+          'Grupo, subgrupo, marca ou unidade informada não existe.',
         );
       }
 
       if (erroPg.code === '23514') {
-        throw new BadRequestException('Dados invalidos para tipo/situacao do produto.');
+        throw new BadRequestException('Dados inválidos para tipo/situação do produto.');
       }
 
       if (erroPg.code === '23502') {

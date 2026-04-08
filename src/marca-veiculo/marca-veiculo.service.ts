@@ -167,6 +167,85 @@ export class MarcaVeiculoService {
     });
   }
 
+  async atualizar(
+    idEmpresa: number,
+    idMarca: number,
+    dados: CriarMarcaVeiculoDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (manager, colunas) => {
+        const descricao = this.normalizarDescricao(dados.descricao);
+        const status = this.normalizarStatus(dados.status);
+        const usuarioAtualizacao = this.normalizarUsuario(
+          dados.usuarioAtualizacao ?? usuarioJwt.email,
+        );
+
+        await this.validarDuplicidadeDescricao(
+          manager,
+          colunas,
+          idEmpresa,
+          descricao,
+          idMarca,
+        );
+
+        const sets: string[] = [];
+        const valores: Array<string | number> = [];
+
+        const addSet = (coluna: string, valor: string | number) => {
+          valores.push(valor);
+          sets.push(`${this.quote(coluna)} = $${valores.length}`);
+        };
+
+        addSet(colunas.descricao, descricao);
+
+        if (colunas.status) {
+          addSet(colunas.status, status);
+        }
+
+        if (colunas.usuarioAtualizacao) {
+          addSet(colunas.usuarioAtualizacao, usuarioAtualizacao);
+        }
+
+        if (colunas.atualizadoEm) {
+          sets.push(`${this.quote(colunas.atualizadoEm)} = NOW()`);
+        }
+
+        const filtros: string[] = [];
+        valores.push(idMarca);
+        filtros.push(`${this.quote(colunas.idMarca)} = $${valores.length}`);
+
+        if (colunas.idEmpresa) {
+          valores.push(String(idEmpresa));
+          filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+        }
+
+        const rows = await manager.query(
+          `
+            UPDATE app.marca_vei
+            SET ${sets.join(', ')}
+            WHERE ${filtros.join(' AND ')}
+            RETURNING *
+          `,
+          valores,
+        );
+
+        const registro = rows[0];
+        if (!registro) {
+          throw new NotFoundException('Marca de veiculo nao encontrada para a empresa logada.');
+        }
+
+        return {
+          sucesso: true,
+          mensagem: status === 'I' ? 'Marca de veiculo inativada com sucesso.' : 'Marca de veiculo atualizada com sucesso.',
+          marca: this.mapear(registro, colunas),
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error);
+    }
+  }
+
   private async executarComRls<T>(
     idEmpresa: number,
     callback: (
@@ -283,6 +362,7 @@ export class MarcaVeiculoService {
     colunas: MapaColunasMarcaVeiculo,
     idEmpresa: number,
     descricao: string,
+    idMarcaIgnorada?: number,
   ) {
     const filtros: string[] = [
       `UPPER(${this.quote(colunas.descricao)}) = UPPER($1)`,
@@ -292,6 +372,11 @@ export class MarcaVeiculoService {
     if (colunas.idEmpresa) {
       valores.push(String(idEmpresa));
       filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+    }
+
+    if (idMarcaIgnorada !== undefined) {
+      valores.push(idMarcaIgnorada);
+      filtros.push(`${this.quote(colunas.idMarca)} <> $${valores.length}`);
     }
 
     const rows = await manager.query(

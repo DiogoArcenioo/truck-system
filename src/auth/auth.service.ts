@@ -680,7 +680,7 @@ export class AuthService {
       const senha = dados.senha.trim();
       if (!this.senhaForte(senha)) {
         throw new BadRequestException(
-          'A senha deve ter no minimo 8 caracteres, incluindo maiuscula, minuscula, numero e simbolo.',
+          'A senha deve ter no mínimo 8 caracteres, incluindo maiúscula, minúscula, número e símbolo.',
         );
       }
       usuario.senhaHash = this.gerarHashDaSenha(senha);
@@ -939,7 +939,7 @@ export class AuthService {
 
     if (!this.senhaForte(senha)) {
       throw new BadRequestException(
-        'A senha deve ter no minimo 8 caracteres, incluindo maiuscula, minuscula, numero e simbolo.',
+        'A senha deve ter no mínimo 8 caracteres, incluindo maiúscula, minúscula, número e símbolo.',
       );
     }
 
@@ -1000,7 +1000,7 @@ export class AuthService {
     }
 
     throw new BadRequestException(
-      'Nao foi possivel gerar slug unico para a empresa.',
+      'Não foi possível gerar slug único para a empresa.',
     );
   }
 
@@ -1022,29 +1022,29 @@ export class AuthService {
 
       if (erroPg.code === '23505') {
         throw new BadRequestException(
-          'Ja existe empresa cadastrada com os dados informados (cnpj, email, codigo ou slug).',
+          'Já existe empresa cadastrada com os dados informados (CNPJ, e-mail, código ou slug).',
         );
       }
 
       if (erroPg.code === '42501') {
         throw new BadRequestException(
-          'Usuario do banco sem permissao para inserir empresa na tabela app.empresas.',
+          'Usuário do banco sem permissão para inserir empresa na tabela app.empresas.',
         );
       }
 
       if (erroPg.code === '42P01') {
-        throw new BadRequestException('Tabela app.empresas nao encontrada.');
+        throw new BadRequestException('Tabela app.empresas não encontrada.');
       }
 
       if (erroPg.code === '42703') {
         throw new BadRequestException(
-          'Estrutura da tabela app.empresas esta diferente do esperado.',
+          'Estrutura da tabela app.empresas está diferente do esperado.',
         );
       }
 
       if (erroPg.code === '23514') {
         throw new BadRequestException(
-          'Dados invalidos para status/plano da empresa. Valores permitidos de status: ativo, inativo, bloqueado, cancelado, trial. Valores permitidos de plano: basico, pro, premium, enterprise.',
+          'Dados inválidos para status/plano da empresa. Valores permitidos de status: ativo, inativo, bloqueado, cancelado, trial. Valores permitidos de plano: básico, pro, premium, enterprise.',
         );
       }
     }
@@ -1053,7 +1053,7 @@ export class AuthService {
       `Falha ao registrar empresa sem codigo SQL mapeado. message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
     );
     throw new BadRequestException(
-      'Nao foi possivel cadastrar a empresa neste momento.',
+      'Não foi possível cadastrar a empresa neste momento.',
     );
   }
 
@@ -1106,23 +1106,23 @@ export class AuthService {
         );
         if (mensagem.includes('PERFIL') || constraint.includes('PERFIL')) {
           throw new BadRequestException(
-            'Perfil selecionado nao e compativel com a estrutura atual da tabela de usuarios. Ajuste o perfil base ou contate o suporte.',
+            'Perfil selecionado não é compatível com a estrutura atual da tabela de usuários. Ajuste o perfil base ou contate o suporte.',
           );
         }
         throw new BadRequestException(
-          'Dados invalidos para o usuario. Revise perfil e campos obrigatorios.',
+          'Dados inválidos para o usuário. Revise perfil e campos obrigatórios.',
         );
       }
 
       if (erroPg.code === '23502') {
         throw new BadRequestException(
-          'Campos obrigatorios do usuario nao foram informados. Revise perfil, nome, email e status.',
+          'Campos obrigatórios do usuário não foram informados. Revise perfil, nome, e-mail e status.',
         );
       }
 
       if (erroPg.code === '22001') {
         throw new BadRequestException(
-          'Um dos campos do usuario excede o limite de caracteres da tabela. Revise nome, email, perfil e usuario de atualizacao.',
+          'Um dos campos do usuário excede o limite de caracteres da tabela. Revise nome, e-mail, perfil e usuário de atualização.',
         );
       }
     }
@@ -1131,7 +1131,7 @@ export class AuthService {
       `Falha ao registrar usuario sem codigo SQL mapeado. message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
     );
     throw new BadRequestException(
-      'Nao foi possivel cadastrar o usuario neste momento.',
+      'Não foi possível cadastrar o usuário neste momento.',
     );
   }
 

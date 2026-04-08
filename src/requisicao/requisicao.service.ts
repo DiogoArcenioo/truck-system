@@ -750,7 +750,7 @@ export class RequisicaoService {
     const faltantes = idsProduto.filter((id) => !encontrados.has(id));
     if (faltantes.length > 0) {
       throw new BadRequestException(
-        `Produto(s) nao encontrado(s) para a empresa logada: ${faltantes.join(', ')}.`,
+        `Produto(s) não encontrado(s) para a empresa logada: ${faltantes.join(', ')}.`,
       );
     }
   }
@@ -818,7 +818,7 @@ export class RequisicaoService {
       const valorUn = Number(item.valorUn);
 
       if (!Number.isFinite(idProduto) || idProduto <= 0) {
-        throw new BadRequestException(`Item ${index + 1}: idProduto invalido.`);
+        throw new BadRequestException(`Item ${index + 1}: idProduto inválido.`);
       }
 
       if (!Number.isFinite(qtdProduto) || qtdProduto <= 0) {
@@ -826,7 +826,7 @@ export class RequisicaoService {
       }
 
       if (!Number.isFinite(valorUn) || valorUn < 0) {
-        throw new BadRequestException(`Item ${index + 1}: valorUn invalido.`);
+        throw new BadRequestException(`Item ${index + 1}: valorUn inválido.`);
       }
 
       const observacaoNormalizada = this.normalizarTextoOpcional(item.observacao);

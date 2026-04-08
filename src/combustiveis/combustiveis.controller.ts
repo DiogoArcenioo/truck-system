@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -47,6 +48,16 @@ export class CombustiveisController {
       usuario.idEmpresa,
       idCombustivel,
     );
+  }
+
+  @Put(':idCombustivel')
+  async atualizar(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idCombustivel', ParseIntPipe) idCombustivel: number,
+    @Body() dados: CriarCombustivelDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.combustiveisService.atualizar(usuario.idEmpresa, idCombustivel, dados, usuario);
   }
 
   private obterUsuarioAutenticado(

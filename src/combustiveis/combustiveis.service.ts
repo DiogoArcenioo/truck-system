@@ -167,6 +167,74 @@ export class CombustiveisService {
     });
   }
 
+  async atualizar(
+    idEmpresa: number,
+    idCombustivel: number,
+    dados: CriarCombustivelDto,
+    usuarioJwt: JwtUsuarioPayload,
+  ) {
+    try {
+      return await this.executarComRls(idEmpresa, async (manager, colunas) => {
+        const descricao = this.normalizarDescricao(dados.descricao);
+        const status = this.normalizarStatus(dados.status);
+        const usuarioAtualizacao = this.normalizarUsuario(
+          dados.usuarioAtualizacao ?? usuarioJwt.email,
+        );
+
+        await this.validarDuplicidadeDescricao(
+          manager,
+          colunas,
+          idEmpresa,
+          descricao,
+          idCombustivel,
+        );
+
+        const sets: string[] = [];
+        const valores: Array<string | number> = [];
+        const addSet = (coluna: string, valor: string | number) => {
+          valores.push(valor);
+          sets.push(`${this.quote(coluna)} = $${valores.length}`);
+        };
+
+        addSet(colunas.descricao, descricao);
+        if (colunas.status) addSet(colunas.status, status);
+        if (colunas.usuarioAtualizacao) addSet(colunas.usuarioAtualizacao, usuarioAtualizacao);
+        if (colunas.atualizadoEm) sets.push(`${this.quote(colunas.atualizadoEm)} = NOW()`);
+
+        const filtros: string[] = [];
+        valores.push(idCombustivel);
+        filtros.push(`${this.quote(colunas.idCombustivel)} = $${valores.length}`);
+        if (colunas.idEmpresa) {
+          valores.push(String(idEmpresa));
+          filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+        }
+
+        const rows = await manager.query(
+          `
+            UPDATE app.combustiveis
+            SET ${sets.join(', ')}
+            WHERE ${filtros.join(' AND ')}
+            RETURNING *
+          `,
+          valores,
+        );
+
+        const registro = rows[0];
+        if (!registro) {
+          throw new NotFoundException('Combustivel nao encontrado para a empresa logada.');
+        }
+
+        return {
+          sucesso: true,
+          mensagem: status === 'I' ? 'Combustivel inativado com sucesso.' : 'Combustivel atualizado com sucesso.',
+          combustivel: this.mapear(registro, colunas),
+        };
+      });
+    } catch (error) {
+      this.tratarErroPersistencia(error);
+    }
+  }
+
   private async executarComRls<T>(
     idEmpresa: number,
     callback: (
@@ -283,6 +351,7 @@ export class CombustiveisService {
     colunas: MapaColunasCombustivel,
     idEmpresa: number,
     descricao: string,
+    idCombustivelIgnorado?: number,
   ) {
     const filtros: string[] = [
       `UPPER(${this.quote(colunas.descricao)}) = UPPER($1)`,
@@ -292,6 +361,11 @@ export class CombustiveisService {
     if (colunas.idEmpresa) {
       valores.push(String(idEmpresa));
       filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+    }
+
+    if (idCombustivelIgnorado !== undefined) {
+      valores.push(idCombustivelIgnorado);
+      filtros.push(`${this.quote(colunas.idCombustivel)} <> $${valores.length}`);
     }
 
     const rows = await manager.query(
