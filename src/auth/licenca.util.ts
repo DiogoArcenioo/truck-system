@@ -160,16 +160,16 @@ function mensagemPorModo({
         : `Restam ${diasRestantesTrial} dias`;
 
     return dataFim
-      ? `${diasTexto} do seu periodo de teste (${diasTrial} dias). Encerramento em ${dataFim}.`
-      : `${diasTexto} do seu periodo de teste (${diasTrial} dias).`;
+      ? `${diasTexto} do seu período de teste (${diasTrial} dias). Encerramento em ${dataFim}.`
+      : `${diasTexto} do seu período de teste (${diasTrial} dias).`;
   }
 
   if (modoAcesso === 'trial_expirado') {
-    return `Seu periodo de teste (${diasTrial} dias) terminou. Voce pode visualizar os dados, mas nao pode cadastrar, editar ou excluir enquanto nao ativar a assinatura.`;
+    return `Seu período de teste (${diasTrial} dias) terminou. Você pode visualizar os dados, mas não pode cadastrar, editar ou excluir enquanto não ativar a assinatura.`;
   }
 
   if (modoAcesso === 'somente_leitura') {
-    return 'Seu acesso esta em modo somente leitura. Visualizacao liberada, operacoes de escrita bloqueadas.';
+    return 'Seu acesso está em modo somente leitura. Visualização liberada, operações de escrita bloqueadas.';
   }
 
   return 'Assinatura ativa. Operacoes de cadastro, edicao e exclusao estao liberadas.';

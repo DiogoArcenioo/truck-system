@@ -31,7 +31,7 @@ export class AtualizarUsuarioSistemaDto {
   @IsString()
   @Matches(PERFIL_CODIGO_REGEX, {
     message:
-      'Perfil invalido. Use de 2 a 40 caracteres com letras, numeros, "_" ou "-".',
+      'Perfil inválido. Use de 2 a 40 caracteres com letras, números, "_" ou "-".',
   })
   perfil?: string;
 

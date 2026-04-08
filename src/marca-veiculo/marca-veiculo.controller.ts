@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -44,6 +45,16 @@ export class MarcaVeiculoController {
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
     return this.marcaVeiculoService.buscarPorId(usuario.idEmpresa, idMarca);
+  }
+
+  @Put(':idMarca')
+  async atualizar(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idMarca', ParseIntPipe) idMarca: number,
+    @Body() dados: CriarMarcaVeiculoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.marcaVeiculoService.atualizar(usuario.idEmpresa, idMarca, dados, usuario);
   }
 
   private obterUsuarioAutenticado(

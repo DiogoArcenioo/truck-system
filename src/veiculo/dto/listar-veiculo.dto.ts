@@ -21,4 +21,5 @@ export class ListarVeiculoDto {
   anoFabricacao!: number | null;
   anoModelo!: number | null;
   dataVencimento!: string | null;
+  criadoEm!: string | null;
 }

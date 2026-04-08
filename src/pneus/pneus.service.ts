@@ -416,7 +416,7 @@ export class PneusService {
 
         if (statusLocalSolicitado === 'EM_USO' && idVeiculo === null) {
           throw new BadRequestException(
-            'Para cadastrar como EM_USO, informe o veiculo e a posicao de montagem.',
+            'Para cadastrar como EM_USO, informe o veículo e a posição de montagem.',
           );
         }
 
@@ -655,7 +655,7 @@ export class PneusService {
           const posicao = this.normalizarPosicao(dados.posicaoDestino);
 
           if (idVeiculo === null || !posicao) {
-            throw new BadRequestException('Para mover para veiculo, informe o veiculo e a posicao.');
+            throw new BadRequestException('Para mover para veículo, informe o veículo e a posição.');
           }
 
           await this.validarVeiculoExiste(manager, idEmpresa, idVeiculo);

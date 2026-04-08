@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -44,6 +45,16 @@ export class CorVeiculoController {
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
     return this.corVeiculoService.buscarPorId(usuario.idEmpresa, idCor);
+  }
+
+  @Put(':idCor')
+  async atualizar(
+    @Req() request: RequisicaoAutenticada,
+    @Param('idCor', ParseIntPipe) idCor: number,
+    @Body() dados: CriarCorVeiculoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.corVeiculoService.atualizar(usuario.idEmpresa, idCor, dados, usuario);
   }
 
   private obterUsuarioAutenticado(
