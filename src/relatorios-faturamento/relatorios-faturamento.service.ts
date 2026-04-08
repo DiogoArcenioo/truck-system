@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DespesasService } from '../despesas/despesas.service';
 import { ViagensService } from '../viagens/viagens.service';
 import { DetalheRelatorioFaturamentoDto } from './dto/detalhe-relatorio-faturamento.dto';
 import { FiltroRelatorioFaturamentoDto } from './dto/filtro-relatorio-faturamento.dto';
+import { FiltroSerieRelatorioFaturamentoDto } from './dto/filtro-serie-relatorio-faturamento.dto';
 
 type TipoValorColuna = 'moeda' | 'numero' | 'data' | 'texto';
 
@@ -89,11 +90,22 @@ type PeriodoRelatorio = {
   descricao: string;
 };
 
+type PeriodoSerieMensal = {
+  inicioMes: string;
+  fimMes: string;
+  inicioMesDate: Date;
+  fimMesDate: Date;
+  inicioData: string;
+  fimData: string;
+  totalMeses: number;
+};
+
 @Injectable()
 export class RelatoriosFaturamentoService {
   private readonly limiteViagens = 100;
   private readonly limiteDespesas = 200;
   private readonly limiteMaximoPaginas = 5000;
+  private readonly limiteMesesSerie = 60;
 
   constructor(
     private readonly viagensService: ViagensService,
@@ -138,6 +150,80 @@ export class RelatoriosFaturamentoService {
           tipoRegistro: 'viagens_despesas',
         },
       },
+    };
+  }
+
+  async obterSerieMensal(
+    idEmpresa: number,
+    filtro: FiltroSerieRelatorioFaturamentoDto,
+  ) {
+    const periodoSerie = this.resolverPeriodoSerieMensal(filtro);
+    const [viagens, despesas] = await Promise.all([
+      this.carregarViagensNoIntervalo(
+        idEmpresa,
+        periodoSerie.inicioData,
+        periodoSerie.fimData,
+      ),
+      this.carregarDespesasNoIntervalo(
+        idEmpresa,
+        periodoSerie.inicioData,
+        periodoSerie.fimData,
+      ),
+    ]);
+
+    const meses = this.criarListaMeses(
+      periodoSerie.inicioMesDate,
+      periodoSerie.fimMesDate,
+    );
+    const faturamentoPorMes = new Map<string, number>();
+    const despesasPorMes = new Map<string, number>();
+
+    for (const mes of meses) {
+      faturamentoPorMes.set(mes, 0);
+      despesasPorMes.set(mes, 0);
+    }
+
+    for (const viagem of viagens) {
+      const mes = this.extrairChaveMes(viagem.dataInicio);
+      if (!mes || !faturamentoPorMes.has(mes)) {
+        continue;
+      }
+      faturamentoPorMes.set(
+        mes,
+        (faturamentoPorMes.get(mes) ?? 0) +
+          this.converterNumero(viagem.valorFrete),
+      );
+    }
+
+    for (const despesa of despesas) {
+      const mes = this.extrairChaveMes(despesa.data);
+      if (!mes || !despesasPorMes.has(mes)) {
+        continue;
+      }
+      despesasPorMes.set(
+        mes,
+        (despesasPorMes.get(mes) ?? 0) + this.converterNumero(despesa.valor),
+      );
+    }
+
+    const serie = meses.map((mes) => {
+      const faturamento = this.arredondar(faturamentoPorMes.get(mes) ?? 0);
+      const totalDespesas = this.arredondar(despesasPorMes.get(mes) ?? 0);
+      return {
+        mes,
+        faturamento,
+        lucroLiquido: this.arredondar(faturamento - totalDespesas),
+      };
+    });
+
+    return {
+      sucesso: true,
+      periodo: {
+        inicioMes: periodoSerie.inicioMes,
+        fimMes: periodoSerie.fimMes,
+        totalMeses: periodoSerie.totalMeses,
+      },
+      serie,
     };
   }
 
@@ -280,6 +366,61 @@ export class RelatoriosFaturamentoService {
       quantidadeViagens: totaisViagens.quantidade,
       quantidadeDespesas: totaisDespesas.quantidade,
     };
+  }
+
+  private async carregarViagensNoIntervalo(
+    idEmpresa: number,
+    dataInicio: string,
+    dataFim: string,
+  ): Promise<ViagemRelatorio[]> {
+    const viagens: ViagemRelatorio[] = [];
+    let pagina = 1;
+    let totalPaginas = 1;
+
+    while (pagina <= totalPaginas && pagina <= this.limiteMaximoPaginas) {
+      const resultado = (await this.viagensService.listarComFiltro(idEmpresa, {
+        dataInicioDe: dataInicio,
+        dataInicioAte: dataFim,
+        pagina,
+        limite: this.limiteViagens,
+        ordenarPor: 'data_inicio',
+        ordem: 'DESC',
+      })) as ResultadoPaginaViagens;
+
+      viagens.push(...(Array.isArray(resultado.viagens) ? resultado.viagens : []));
+      totalPaginas = Math.max(1, this.converterInteiro(resultado.paginas));
+      pagina += 1;
+    }
+
+    return viagens;
+  }
+
+  private async carregarDespesasNoIntervalo(
+    idEmpresa: number,
+    dataInicio: string,
+    dataFim: string,
+  ): Promise<DespesaRelatorio[]> {
+    const despesas: DespesaRelatorio[] = [];
+    let pagina = 1;
+    let totalPaginas = 1;
+
+    while (pagina <= totalPaginas && pagina <= this.limiteMaximoPaginas) {
+      const resultado = (await this.despesasService.listarComFiltro(idEmpresa, {
+        dataDe: dataInicio,
+        dataAte: dataFim,
+        situacao: 'ATIVO',
+        pagina,
+        limite: this.limiteDespesas,
+        ordenarPor: 'data',
+        ordem: 'DESC',
+      })) as ResultadoPaginaDespesas;
+
+      despesas.push(...(Array.isArray(resultado.despesas) ? resultado.despesas : []));
+      totalPaginas = Math.max(1, this.converterInteiro(resultado.totalPaginas));
+      pagina += 1;
+    }
+
+    return despesas;
   }
 
   private async carregarTotaisViagensPeriodo(
@@ -519,6 +660,68 @@ export class RelatoriosFaturamentoService {
     };
   }
 
+  private resolverPeriodoSerieMensal(
+    filtro: FiltroSerieRelatorioFaturamentoDto,
+  ): PeriodoSerieMensal {
+    const agora = new Date();
+    const fimDefault = new Date(
+      Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1, 0, 0, 0, 0),
+    );
+    const inicioDefault = new Date(fimDefault);
+    inicioDefault.setUTCMonth(inicioDefault.getUTCMonth() - 11);
+
+    const inicioMesDate = filtro.inicioMes
+      ? this.parseMesAno(filtro.inicioMes)
+      : inicioDefault;
+    const fimMesDate = filtro.fimMes ? this.parseMesAno(filtro.fimMes) : fimDefault;
+
+    if (inicioMesDate > fimMesDate) {
+      throw new BadRequestException(
+        'Intervalo invalido: inicioMes deve ser menor ou igual ao fimMes.',
+      );
+    }
+
+    const totalMeses = this.calcularTotalMeses(inicioMesDate, fimMesDate);
+    if (totalMeses > this.limiteMesesSerie) {
+      throw new BadRequestException(
+        `Intervalo invalido: selecione no maximo ${this.limiteMesesSerie} meses para o grafico.`,
+      );
+    }
+
+    const inicioData = new Date(
+      Date.UTC(
+        inicioMesDate.getUTCFullYear(),
+        inicioMesDate.getUTCMonth(),
+        1,
+        0,
+        0,
+        0,
+        0,
+      ),
+    );
+    const fimData = new Date(
+      Date.UTC(
+        fimMesDate.getUTCFullYear(),
+        fimMesDate.getUTCMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      ),
+    );
+
+    return {
+      inicioMes: this.formatarMesAno(inicioMesDate),
+      fimMes: this.formatarMesAno(fimMesDate),
+      inicioMesDate,
+      fimMesDate,
+      inicioData: inicioData.toISOString(),
+      fimData: fimData.toISOString(),
+      totalMeses,
+    };
+  }
+
   private montarPeriodoResposta(periodo: PeriodoRelatorio) {
     return {
       mes: periodo.mes,
@@ -540,6 +743,60 @@ export class RelatoriosFaturamentoService {
     }
 
     return data.toISOString();
+  }
+
+  private parseMesAno(valor: string): Date {
+    const match = /^(\d{4})-(\d{2})$/.exec(valor.trim());
+    if (!match) {
+      throw new BadRequestException(
+        'Formato de mes invalido. Use o padrao YYYY-MM.',
+      );
+    }
+
+    const ano = Number(match[1]);
+    const mes = Number(match[2]);
+    if (!Number.isFinite(ano) || !Number.isFinite(mes) || mes < 1 || mes > 12) {
+      throw new BadRequestException(
+        'Mes informado fora do intervalo permitido.',
+      );
+    }
+
+    return new Date(Date.UTC(ano, mes - 1, 1, 0, 0, 0, 0));
+  }
+
+  private formatarMesAno(data: Date): string {
+    return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
+  private calcularTotalMeses(inicioMes: Date, fimMes: Date): number {
+    return (
+      (fimMes.getUTCFullYear() - inicioMes.getUTCFullYear()) * 12 +
+      (fimMes.getUTCMonth() - inicioMes.getUTCMonth()) +
+      1
+    );
+  }
+
+  private criarListaMeses(inicioMes: Date, fimMes: Date): string[] {
+    const meses: string[] = [];
+    const cursor = new Date(inicioMes);
+    while (cursor <= fimMes) {
+      meses.push(this.formatarMesAno(cursor));
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    return meses;
+  }
+
+  private extrairChaveMes(valor: Date | string | null): string | null {
+    if (!valor) {
+      return null;
+    }
+
+    const data = valor instanceof Date ? valor : new Date(valor);
+    if (Number.isNaN(data.getTime())) {
+      return null;
+    }
+
+    return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, '0')}`;
   }
 
   private converterNumero(valor: unknown): number {

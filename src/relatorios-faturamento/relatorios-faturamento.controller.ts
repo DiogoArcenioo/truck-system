@@ -9,6 +9,7 @@ import {
 import { JwtAuthGuard, JwtUsuarioPayload } from '../auth/guards/jwt-auth.guard';
 import { DetalheRelatorioFaturamentoDto } from './dto/detalhe-relatorio-faturamento.dto';
 import { FiltroRelatorioFaturamentoDto } from './dto/filtro-relatorio-faturamento.dto';
+import { FiltroSerieRelatorioFaturamentoDto } from './dto/filtro-serie-relatorio-faturamento.dto';
 import { RelatoriosFaturamentoService } from './relatorios-faturamento.service';
 
 type RequisicaoAutenticada = {
@@ -38,6 +39,18 @@ export class RelatoriosFaturamentoController {
   ) {
     const usuario = this.obterUsuarioAutenticado(request);
     return this.relatoriosFaturamentoService.obterDetalhes(
+      usuario.idEmpresa,
+      filtro,
+    );
+  }
+
+  @Get('serie-mensal')
+  async obterSerieMensal(
+    @Req() request: RequisicaoAutenticada,
+    @Query() filtro: FiltroSerieRelatorioFaturamentoDto,
+  ) {
+    const usuario = this.obterUsuarioAutenticado(request);
+    return this.relatoriosFaturamentoService.obterSerieMensal(
       usuario.idEmpresa,
       filtro,
     );
