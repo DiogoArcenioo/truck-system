@@ -118,14 +118,7 @@ export class AbastecimentosService {
       const limite = filtro.limite ?? 20;
 
       if (filtro.idViagem !== undefined && !colunas.idViagem) {
-        return {
-          sucesso: true,
-          paginaAtual: pagina,
-          limite,
-          total: 0,
-          totalPaginas: 0,
-          abastecimentos: [],
-        };
+        this.garantirColunaIdViagemDisponivel(colunas.idViagem);
       }
 
       const filtros: string[] = [];
@@ -305,6 +298,10 @@ export class AbastecimentosService {
 
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
+        if (payload.idViagem !== null) {
+          this.garantirColunaIdViagemDisponivel(colunas.idViagem);
+        }
+
         const idViagem = colunas.idViagem
           ? await this.resolverIdViagemParaAbastecimento(
               manager,
@@ -392,6 +389,10 @@ export class AbastecimentosService {
 
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
+        if (payload.idViagem !== undefined) {
+          this.garantirColunaIdViagemDisponivel(colunas.idViagem);
+        }
+
         const registroAtual = await this.buscarRegistroPorIdOuFalhar(
           manager,
           colunas,
@@ -673,6 +674,16 @@ export class AbastecimentosService {
     }
 
     return null;
+  }
+
+  private garantirColunaIdViagemDisponivel(colunaIdViagem?: string | null): void {
+    if (colunaIdViagem) {
+      return;
+    }
+
+    throw new BadRequestException(
+      'Campo de vinculo da viagem nao encontrado em app.abastecimentos (id_viagem/viagem_id). Execute o script sql/abastecimentos_add_id_viagem.sql e reinicie o backend.',
+    );
   }
 
   private async buscarRegistroPorIdOuFalhar(
