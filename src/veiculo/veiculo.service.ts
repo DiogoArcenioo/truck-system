@@ -342,6 +342,16 @@ export class VeiculoService {
         `${this.quote(colunas.placa)} AS placa`,
       ];
 
+      if (colunas.idMotoristaAtual) {
+        campos.push(
+          `${this.quote(colunas.idMotoristaAtual)} AS id_motorista_atual`,
+        );
+      }
+
+      if (colunas.km) {
+        campos.push(`${this.quote(colunas.km)} AS km_atual`);
+      }
+
       if (colunas.placa2) {
         campos.push(`${this.quote(colunas.placa2)} AS placa2`);
       }
@@ -1229,6 +1239,9 @@ export class VeiculoService {
 
   private extrairPlacasDoRegistro(registro: RegistroBanco): PlacaVeiculoDto[] {
     const idVeiculo = this.converterNumero(registro.id_veiculo) ?? 0;
+    const idMotoristaAtual =
+      this.converterNumero(registro.id_motorista_atual) ?? null;
+    const kmAtual = this.converterNumero(registro.km_atual) ?? null;
     const entradas = [
       {
         valor: this.converterTexto(registro.placa),
@@ -1264,6 +1277,8 @@ export class VeiculoService {
       )
       .map((item) => ({
         idVeiculo,
+        idMotoristaAtual,
+        kmAtual,
         placa: item.valor.trim().toUpperCase(),
         origemCampo: item.origem,
         tipo: item.tipo,
