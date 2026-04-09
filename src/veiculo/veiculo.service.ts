@@ -42,6 +42,15 @@ type MapaColunasVeiculo = {
   criadoEm: string | null;
 };
 
+type MapaColunasFallbackEngate = {
+  idVeiculo: string;
+  idMotorista: string;
+  tipoEngate: string;
+  dataMovi: string;
+  idEmpresa: string | null;
+  idEngate: string | null;
+};
+
 type VeiculoPersistencia = {
   idFornecedor: number;
   idMarca: number;
@@ -71,6 +80,14 @@ type AtualizacaoVeiculoPersistencia = Partial<VeiculoPersistencia>;
 @Injectable()
 export class VeiculoService {
   private readonly logger = new Logger(VeiculoService.name);
+  private readonly tabelasEngateCandidatas = [
+    'engate_veiculo',
+    'engate',
+    'engates',
+    'engate_desengate',
+    'engate_desengates',
+    'movimentacao_engate',
+  ];
 
   constructor(private readonly dataSource: DataSource) {}
 
@@ -93,7 +110,21 @@ export class VeiculoService {
         .join('\n');
 
       const rows = await manager.query(sql, valores);
-      const veiculos = rows.map((row) => this.mapearRegistro(row, colunas));
+      const motoristaFallbackPorVeiculo =
+        await this.carregarMotoristaFallbackPorRegistros(
+          manager,
+          idEmpresa,
+          rows,
+          colunas,
+        );
+      const veiculos = rows.map((row) => {
+        const idVeiculo = this.converterNumero(row[colunas.idVeiculo]) ?? 0;
+        return this.mapearRegistro(
+          row,
+          colunas,
+          motoristaFallbackPorVeiculo.get(idVeiculo) ?? null,
+        );
+      });
 
       return {
         sucesso: true,
@@ -306,7 +337,21 @@ export class VeiculoService {
       const rows = await manager.query(sqlDados, [...valores, limite, offset]);
 
       const total = Number(countRows[0]?.total ?? 0);
-      const veiculos = rows.map((row) => this.mapearRegistro(row, colunas));
+      const motoristaFallbackPorVeiculo =
+        await this.carregarMotoristaFallbackPorRegistros(
+          manager,
+          idEmpresa,
+          rows,
+          colunas,
+        );
+      const veiculos = rows.map((row) => {
+        const idVeiculo = this.converterNumero(row[colunas.idVeiculo]) ?? 0;
+        return this.mapearRegistro(
+          row,
+          colunas,
+          motoristaFallbackPorVeiculo.get(idVeiculo) ?? null,
+        );
+      });
 
       return {
         sucesso: true,
@@ -327,10 +372,23 @@ export class VeiculoService {
         idEmpresa,
         idVeiculo,
       );
+      const motoristaFallbackPorVeiculo =
+        await this.carregarMotoristaFallbackPorRegistros(
+          manager,
+          idEmpresa,
+          [registro],
+          colunas,
+        );
+      const idVeiculoRegistro =
+        this.converterNumero(registro[colunas.idVeiculo]) ?? idVeiculo;
 
       return {
         sucesso: true,
-        veiculo: this.mapearRegistro(registro, colunas),
+        veiculo: this.mapearRegistro(
+          registro,
+          colunas,
+          motoristaFallbackPorVeiculo.get(idVeiculoRegistro) ?? null,
+        ),
       };
     });
   }
@@ -378,7 +436,21 @@ export class VeiculoService {
       `;
 
       const rows = await manager.query(sql, valores);
-      const placas = rows.flatMap((row) => this.extrairPlacasDoRegistro(row));
+      const motoristaFallbackPorVeiculo =
+        await this.carregarMotoristaFallbackPorLinhasPlacas(
+          manager,
+          idEmpresa,
+          rows,
+          Boolean(colunas.idMotoristaAtual),
+        );
+      const placas = rows.flatMap((row) => {
+        const idVeiculo = this.converterNumero(row.id_veiculo) ?? 0;
+        const idMotoristaAtual =
+          this.converterIdPositivo(row.id_motorista_atual) ??
+          motoristaFallbackPorVeiculo.get(idVeiculo) ??
+          null;
+        return this.extrairPlacasDoRegistro(row, idMotoristaAtual);
+      });
       const unicas = new Map<string, PlacaVeiculoDto>();
 
       for (const placa of placas) {
@@ -1094,6 +1166,229 @@ export class VeiculoService {
     }
   }
 
+  private async carregarMotoristaFallbackPorRegistros(
+    manager: EntityManager,
+    idEmpresa: number,
+    registros: RegistroBanco[],
+    colunas: MapaColunasVeiculo,
+  ): Promise<Map<number, number>> {
+    const idsVeiculo: number[] = [];
+    const colunaMotoristaAtual = colunas.idMotoristaAtual;
+
+    for (const registro of registros) {
+      const idVeiculo = this.converterNumero(registro[colunas.idVeiculo]);
+      if (idVeiculo === null || idVeiculo <= 0) {
+        continue;
+      }
+
+      if (!colunaMotoristaAtual) {
+        idsVeiculo.push(idVeiculo);
+        continue;
+      }
+
+      const idMotoristaAtual = this.converterIdPositivo(
+        registro[colunaMotoristaAtual],
+      );
+      if (idMotoristaAtual === null) {
+        idsVeiculo.push(idVeiculo);
+      }
+    }
+
+    return this.carregarMotoristaFallbackPorIdsVeiculo(
+      manager,
+      idEmpresa,
+      idsVeiculo,
+    );
+  }
+
+  private async carregarMotoristaFallbackPorLinhasPlacas(
+    manager: EntityManager,
+    idEmpresa: number,
+    linhas: RegistroBanco[],
+    possuiCampoMotoristaAtual: boolean,
+  ): Promise<Map<number, number>> {
+    const idsVeiculo: number[] = [];
+
+    for (const linha of linhas) {
+      const idVeiculo = this.converterNumero(linha.id_veiculo);
+      if (idVeiculo === null || idVeiculo <= 0) {
+        continue;
+      }
+
+      if (!possuiCampoMotoristaAtual) {
+        idsVeiculo.push(idVeiculo);
+        continue;
+      }
+
+      const idMotoristaAtual = this.converterIdPositivo(
+        linha.id_motorista_atual,
+      );
+      if (idMotoristaAtual === null) {
+        idsVeiculo.push(idVeiculo);
+      }
+    }
+
+    return this.carregarMotoristaFallbackPorIdsVeiculo(
+      manager,
+      idEmpresa,
+      idsVeiculo,
+    );
+  }
+
+  private async carregarMotoristaFallbackPorIdsVeiculo(
+    manager: EntityManager,
+    idEmpresa: number,
+    idsVeiculo: number[],
+  ): Promise<Map<number, number>> {
+    const mapa = new Map<number, number>();
+    const ids = Array.from(
+      new Set(
+        idsVeiculo.filter(
+          (id): id is number => Number.isFinite(id) && Math.trunc(id) > 0,
+        ),
+      ),
+    );
+
+    if (ids.length === 0) {
+      return mapa;
+    }
+
+    const tabela = await this.descobrirTabelaEngateFallback(manager);
+    if (!tabela) {
+      return mapa;
+    }
+
+    const colunas = await this.descobrirColunasFallbackEngate(manager, tabela);
+    if (!colunas) {
+      return mapa;
+    }
+
+    const filtros: string[] = [
+      `${this.quote(colunas.idVeiculo)} = ANY($1::int[])`,
+    ];
+    const valores: Array<string | number | number[]> = [ids];
+
+    if (colunas.idEmpresa) {
+      valores.push(String(idEmpresa));
+      filtros.push(`${this.quote(colunas.idEmpresa)} = $${valores.length}`);
+    }
+
+    const sql = `
+      SELECT DISTINCT ON (${this.quote(colunas.idVeiculo)})
+        ${this.quote(colunas.idVeiculo)} AS id_veiculo,
+        ${this.quote(colunas.idMotorista)} AS id_motorista,
+        ${this.quote(colunas.tipoEngate)} AS tipo_engate
+      FROM app.${this.quoteIdentifier(tabela)}
+      WHERE ${filtros.join(' AND ')}
+      ORDER BY
+        ${this.quote(colunas.idVeiculo)} ASC,
+        ${this.quote(colunas.dataMovi)} DESC
+        ${colunas.idEngate ? `, ${this.quote(colunas.idEngate)} DESC` : ''}
+    `;
+
+    let rows: RegistroBanco[] = [];
+    try {
+      rows = await manager.query(sql, valores);
+    } catch (error) {
+      this.logger.warn(
+        `Nao foi possivel carregar fallback de motorista por engate. message=${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+      );
+      return mapa;
+    }
+
+    for (const row of rows) {
+      const tipoEngate = this.converterTexto(row.tipo_engate)?.toUpperCase();
+      if (tipoEngate !== 'E') {
+        continue;
+      }
+
+      const idVeiculo = this.converterNumero(row.id_veiculo);
+      const idMotorista = this.converterIdPositivo(row.id_motorista);
+      if (idVeiculo && idMotorista) {
+        mapa.set(idVeiculo, idMotorista);
+      }
+    }
+
+    return mapa;
+  }
+
+  private async descobrirTabelaEngateFallback(
+    manager: EntityManager,
+  ): Promise<string | null> {
+    const rows = await manager.query(
+      `
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'app'
+        AND table_name = ANY($1::text[])
+      `,
+      [this.tabelasEngateCandidatas],
+    );
+
+    const tabelasDisponiveis = new Set(
+      rows
+        .map((row) => this.converterTexto(row.table_name))
+        .filter((valor): valor is string => Boolean(valor)),
+    );
+
+    for (const tabela of this.tabelasEngateCandidatas) {
+      if (tabelasDisponiveis.has(tabela)) {
+        return tabela;
+      }
+    }
+
+    return null;
+  }
+
+  private async descobrirColunasFallbackEngate(
+    manager: EntityManager,
+    tabela: string,
+  ): Promise<MapaColunasFallbackEngate | null> {
+    const rows = await manager.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'app'
+        AND table_name = $1
+      `,
+      [tabela],
+    );
+
+    const colunas = new Set(
+      rows
+        .map((row) => this.converterTexto(row.column_name))
+        .filter((valor): valor is string => Boolean(valor)),
+    );
+
+    const encontrar = (candidatas: string[], obrigatoria = true) => {
+      for (const candidata of candidatas) {
+        if (colunas.has(candidata)) {
+          return candidata;
+        }
+      }
+
+      return obrigatoria ? null : null;
+    };
+
+    const idVeiculo = encontrar(['id_veiculo']);
+    const idMotorista = encontrar(['id_motorista']);
+    const tipoEngate = encontrar(['tipo_engate']);
+    const dataMovi = encontrar(['data_movi']);
+
+    if (!idVeiculo || !idMotorista || !tipoEngate || !dataMovi) {
+      return null;
+    }
+
+    return {
+      idVeiculo,
+      idMotorista,
+      tipoEngate,
+      dataMovi,
+      idEmpresa: encontrar(['id_empresa'], false),
+      idEngate: encontrar(['id_engate', 'id'], false),
+    };
+  }
+
   private resolverColunaOrdenacao(
     ordenarPor: FiltroVeiculosDto['ordenarPor'],
     colunas: MapaColunasVeiculo,
@@ -1137,6 +1432,7 @@ export class VeiculoService {
   private mapearRegistro(
     registro: RegistroBanco,
     colunas: MapaColunasVeiculo,
+    idMotoristaAtualFallback: number | null = null,
   ): ListarVeiculoDto {
     const placaPrincipal =
       this.converterTexto(registro[colunas.placa])?.toUpperCase() ?? '';
@@ -1155,6 +1451,11 @@ export class VeiculoService {
 
     const km =
       colunas.km !== null ? this.converterNumero(registro[colunas.km]) : null;
+    const idMotoristaAtual =
+      colunas.idMotoristaAtual !== null
+        ? this.converterIdPositivo(registro[colunas.idMotoristaAtual]) ??
+          idMotoristaAtualFallback
+        : idMotoristaAtualFallback;
 
     return {
       idVeiculo: this.converterNumero(registro[colunas.idVeiculo]) ?? 0,
@@ -1215,14 +1516,8 @@ export class VeiculoService {
           ? (this.converterTexto(registro[colunas.status])?.toUpperCase() ??
             null)
           : null,
-      idMotorista:
-        colunas.idMotoristaAtual !== null
-          ? this.converterNumero(registro[colunas.idMotoristaAtual])
-          : null,
-      idMotoristaAtual:
-        colunas.idMotoristaAtual !== null
-          ? this.converterNumero(registro[colunas.idMotoristaAtual])
-          : null,
+      idMotorista: idMotoristaAtual,
+      idMotoristaAtual,
       km,
       kmAtual: km,
       anoFabricacao:
@@ -1241,10 +1536,14 @@ export class VeiculoService {
     };
   }
 
-  private extrairPlacasDoRegistro(registro: RegistroBanco): PlacaVeiculoDto[] {
+  private extrairPlacasDoRegistro(
+    registro: RegistroBanco,
+    idMotoristaAtualFallback: number | null = null,
+  ): PlacaVeiculoDto[] {
     const idVeiculo = this.converterNumero(registro.id_veiculo) ?? 0;
     const idMotoristaAtual =
-      this.converterNumero(registro.id_motorista_atual) ?? null;
+      this.converterIdPositivo(registro.id_motorista_atual) ??
+      idMotoristaAtualFallback;
     const kmAtual = this.converterNumero(registro.km_atual) ?? null;
     const entradas = [
       {
@@ -1359,6 +1658,16 @@ export class VeiculoService {
     return `"${coluna}"`;
   }
 
+  private quoteIdentifier(valor: string): string {
+    if (!/^[a-z_][a-z0-9_]*$/.test(valor)) {
+      throw new BadRequestException(
+        `Nome de identificador invalido detectado: ${valor}`,
+      );
+    }
+
+    return `"${valor}"`;
+  }
+
   private converterNumero(valor: unknown): number | null {
     if (valor === null || valor === undefined) {
       return null;
@@ -1366,6 +1675,15 @@ export class VeiculoService {
 
     const numero = Number(valor);
     return Number.isFinite(numero) ? numero : null;
+  }
+
+  private converterIdPositivo(valor: unknown): number | null {
+    const numero = this.converterNumero(valor);
+    if (numero === null || !Number.isFinite(numero) || numero <= 0) {
+      return null;
+    }
+
+    return Math.trunc(numero);
   }
 
   private converterTexto(valor: unknown): string | null {
