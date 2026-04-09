@@ -23,6 +23,15 @@ export class AtualizarAbastecimentoDto {
   idFornecedor?: number;
 
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === null || value === undefined || value === '' ? null : value,
+  )
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  idViagem?: number | null;
+
+  @IsOptional()
   @IsDateString()
   dataAbastecimento?: string;
 

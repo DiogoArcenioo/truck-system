@@ -20,6 +20,12 @@ export class CriarAbastecimentoDto {
   @Min(1)
   idFornecedor!: number;
 
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  idViagem?: number;
+
   @IsDateString()
   dataAbastecimento!: string;
 

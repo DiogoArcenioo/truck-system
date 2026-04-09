@@ -50,6 +50,7 @@ type AbastecimentoNormalizado = {
 type AbastecimentoPersistencia = {
   idVeiculo: number;
   idFornecedor: number;
+  idViagem: number | null;
   dataAbastecimento: Date;
   litros: number;
   valorLitro: number;
@@ -57,6 +58,19 @@ type AbastecimentoPersistencia = {
   km: number;
   observacao: string | null;
   usuarioAtualizacao: string;
+};
+
+type AbastecimentoAtualizacao = {
+  idVeiculo?: number;
+  idFornecedor?: number;
+  idViagem?: number | null;
+  dataAbastecimento?: Date;
+  litros?: number;
+  valorLitro?: number;
+  valorTotal?: number;
+  km?: number;
+  observacao?: string | null;
+  usuarioAtualizacao?: string;
 };
 
 @Injectable()
@@ -291,6 +305,14 @@ export class AbastecimentosService {
 
     try {
       return this.executarComRls(idEmpresa, async (manager, colunas) => {
+        const idViagem = colunas.idViagem
+          ? await this.resolverIdViagemParaAbastecimento(
+              manager,
+              idEmpresa,
+              payload.idVeiculo,
+              payload.idViagem,
+            )
+          : null;
         const campos = [
           colunas.idVeiculo,
           colunas.idFornecedor,
@@ -308,6 +330,11 @@ export class AbastecimentosService {
           payload.valorLitro,
           payload.km,
         ];
+
+        if (colunas.idViagem) {
+          campos.push(colunas.idViagem);
+          valores.push(idViagem);
+        }
 
         if (colunas.valorTotal) {
           campos.push(colunas.valorTotal);
@@ -375,6 +402,16 @@ export class AbastecimentosService {
 
         const idVeiculo = payload.idVeiculo ?? atual.idVeiculo;
         const idFornecedor = payload.idFornecedor ?? atual.idFornecedor;
+        const idViagemEntrada =
+          payload.idViagem !== undefined ? payload.idViagem : atual.idViagem;
+        const idViagem = colunas.idViagem
+          ? await this.resolverIdViagemParaAbastecimento(
+              manager,
+              idEmpresa,
+              idVeiculo,
+              idViagemEntrada,
+            )
+          : null;
         const dataAbastecimento =
           payload.dataAbastecimento ?? atual.dataAbastecimento;
         const litros = payload.litros ?? atual.litros;
@@ -411,6 +448,10 @@ export class AbastecimentosService {
         adicionarSet(colunas.litros, litros);
         adicionarSet(colunas.valorLitro, valorLitro);
         adicionarSet(colunas.km, km);
+
+        if (colunas.idViagem) {
+          adicionarSet(colunas.idViagem, idViagem);
+        }
 
         if (colunas.valorTotal) {
           adicionarSet(colunas.valorTotal, valorTotal);
@@ -679,6 +720,7 @@ export class AbastecimentosService {
     return {
       idVeiculo: dados.idVeiculo,
       idFornecedor: dados.idFornecedor,
+      idViagem: dados.idViagem ?? null,
       dataAbastecimento: new Date(dados.dataAbastecimento),
       litros,
       valorLitro,
@@ -699,10 +741,11 @@ export class AbastecimentosService {
   private normalizarAtualizacao(
     dados: AtualizarAbastecimentoDto,
     usuarioJwt: JwtUsuarioPayload,
-  ) {
+  ): AbastecimentoAtualizacao {
     return {
       idVeiculo: dados.idVeiculo,
       idFornecedor: dados.idFornecedor,
+      idViagem: dados.idViagem,
       dataAbastecimento:
         dados.dataAbastecimento !== undefined
           ? new Date(dados.dataAbastecimento)
@@ -764,6 +807,102 @@ export class AbastecimentosService {
     if (!Number.isFinite(payload.km) || payload.km < 0) {
       throw new BadRequestException('km invalido.');
     }
+  }
+
+  private async resolverIdViagemParaAbastecimento(
+    manager: EntityManager,
+    idEmpresa: number,
+    idVeiculo: number,
+    idViagemInformada: number | null,
+  ): Promise<number | null> {
+    if (idViagemInformada !== null) {
+      if (!Number.isFinite(idViagemInformada) || idViagemInformada <= 0) {
+        throw new BadRequestException('idViagem invalido.');
+      }
+
+      const viagem = await this.buscarViagemAbertaPorId(
+        manager,
+        idEmpresa,
+        idViagemInformada,
+      );
+      if (viagem.idVeiculo !== idVeiculo) {
+        throw new BadRequestException(
+          `Viagem #${idViagemInformada} nao pertence ao veiculo informado.`,
+        );
+      }
+
+      return viagem.idViagem;
+    }
+
+    return this.buscarViagemAbertaMaisRecentePorVeiculo(
+      manager,
+      idEmpresa,
+      idVeiculo,
+    );
+  }
+
+  private async buscarViagemAbertaPorId(
+    manager: EntityManager,
+    idEmpresa: number,
+    idViagem: number,
+  ): Promise<{ idViagem: number; idVeiculo: number }> {
+    const rows = (await manager.query(
+      `
+      SELECT id_viagem, id_veiculo, status, data_fim
+      FROM app.viagens
+      WHERE id_viagem = $1
+        AND id_empresa = $2
+      LIMIT 1
+      `,
+      [idViagem, String(idEmpresa)],
+    )) as RegistroBanco[];
+
+    const registro = rows[0];
+    if (!registro) {
+      throw new BadRequestException(
+        `Viagem #${idViagem} nao encontrada para a empresa logada.`,
+      );
+    }
+
+    const statusViagem =
+      this.converterTexto(registro.status)?.toUpperCase() ?? '';
+    const dataFimViagem = this.converterData(registro.data_fim);
+    if (statusViagem !== 'A' || dataFimViagem !== null) {
+      throw new BadRequestException(
+        `Viagem #${idViagem} encerrada. Vinculo de abastecimento permitido apenas para viagem aberta (status='A' e dataFim nula).`,
+      );
+    }
+
+    const idVeiculo = this.converterNumero(registro.id_veiculo);
+    if (!idVeiculo || idVeiculo <= 0) {
+      throw new BadRequestException(
+        `Viagem #${idViagem} sem veiculo valido para vinculo do abastecimento.`,
+      );
+    }
+
+    return { idViagem, idVeiculo };
+  }
+
+  private async buscarViagemAbertaMaisRecentePorVeiculo(
+    manager: EntityManager,
+    idEmpresa: number,
+    idVeiculo: number,
+  ): Promise<number | null> {
+    const rows = (await manager.query(
+      `
+      SELECT id_viagem
+      FROM app.viagens
+      WHERE id_veiculo = $1
+        AND id_empresa = $2
+        AND status = 'A'
+        AND data_fim IS NULL
+      ORDER BY data_inicio DESC, id_viagem DESC
+      LIMIT 1
+      `,
+      [idVeiculo, String(idEmpresa)],
+    )) as RegistroBanco[];
+
+    return this.converterNumero(rows[0]?.id_viagem);
   }
 
   private validarIntervalosDoFiltro(filtro: FiltroAbastecimentosDto) {
@@ -954,7 +1093,7 @@ export class AbastecimentosService {
 
       if (erroPg.code === '23503') {
         throw new BadRequestException(
-          'Veiculo ou fornecedor informado nao existe para a empresa.',
+          'Veiculo, fornecedor ou viagem informada nao existe para a empresa.',
         );
       }
 
