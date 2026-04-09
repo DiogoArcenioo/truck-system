@@ -15,6 +15,7 @@ export class ListarVeiculoDto {
   vencimentoDocumento!: string | null;
   observacao!: string | null;
   status!: string | null;
+  idMotorista!: number | null;
   idMotoristaAtual!: number | null;
   km!: number | null;
   kmAtual!: number | null;

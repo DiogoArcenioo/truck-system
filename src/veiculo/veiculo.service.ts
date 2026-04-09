@@ -1215,6 +1215,10 @@ export class VeiculoService {
           ? (this.converterTexto(registro[colunas.status])?.toUpperCase() ??
             null)
           : null,
+      idMotorista:
+        colunas.idMotoristaAtual !== null
+          ? this.converterNumero(registro[colunas.idMotoristaAtual])
+          : null,
       idMotoristaAtual:
         colunas.idMotoristaAtual !== null
           ? this.converterNumero(registro[colunas.idMotoristaAtual])
@@ -1277,6 +1281,7 @@ export class VeiculoService {
       )
       .map((item) => ({
         idVeiculo,
+        idMotorista: idMotoristaAtual,
         idMotoristaAtual,
         kmAtual,
         placa: item.valor.trim().toUpperCase(),

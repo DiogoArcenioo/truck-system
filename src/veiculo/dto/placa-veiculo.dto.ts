@@ -1,5 +1,6 @@
 export class PlacaVeiculoDto {
   idVeiculo!: number;
+  idMotorista!: number | null;
   idMotoristaAtual!: number | null;
   kmAtual!: number | null;
   placa!: string;
