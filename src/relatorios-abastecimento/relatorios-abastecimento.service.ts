@@ -14,6 +14,7 @@ type ColunaTabela = {
 type AbastecimentoRelatorio = {
   idAbastecimento: number;
   idVeiculo: number;
+  idViagem?: number | null;
   idFornecedor: number;
   dataAbastecimento: Date | string;
   litros: number;
@@ -323,6 +324,7 @@ export class RelatoriosAbastecimentoService {
     viagens: ViagemRelatorio[],
   ): Map<number, VinculoAbastecimento> {
     const viagensPorVeiculo = new Map<number, ViagemVinculoIntervalo[]>();
+    const viagensPorId = new Map<number, ViagemVinculoIntervalo>();
 
     for (const viagem of viagens) {
       const idVeiculo = this.converterInteiro(viagem.idVeiculo);
@@ -355,6 +357,9 @@ export class RelatoriosAbastecimentoService {
       const lista = viagensPorVeiculo.get(idVeiculo) ?? [];
       lista.push(item);
       viagensPorVeiculo.set(idVeiculo, lista);
+      if (item.idViagem > 0) {
+        viagensPorId.set(item.idViagem, item);
+      }
     }
 
     for (const lista of viagensPorVeiculo.values()) {
@@ -367,6 +372,21 @@ export class RelatoriosAbastecimentoService {
       const idAbastecimento = this.converterInteiro(abastecimento.idAbastecimento);
       if (idAbastecimento <= 0) {
         continue;
+      }
+
+      const idViagemDireta = this.converterInteiro(abastecimento.idViagem);
+      if (idViagemDireta > 0) {
+        const viagemVinculada = viagensPorId.get(idViagemDireta);
+        if (viagemVinculada) {
+          vinculos.set(idAbastecimento, {
+            idViagem: viagemVinculada.idViagem,
+            idMotorista: viagemVinculada.idMotorista ?? null,
+            kmViagem: viagemVinculada.kmViagem ?? null,
+            dataInicioViagem: viagemVinculada.dataInicioIso ?? null,
+            dataFimViagem: viagemVinculada.dataFimIso ?? null,
+          });
+          continue;
+        }
       }
 
       const idVeiculo = this.converterInteiro(abastecimento.idVeiculo);

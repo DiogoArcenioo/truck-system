@@ -34,6 +34,7 @@ type ResultadoBuscaViagem = {
 type AbastecimentoRelatorio = {
   idAbastecimento: number;
   idVeiculo: number;
+  idViagem?: number | null;
   idFornecedor: number;
   dataAbastecimento: Date | string;
   litros: number;
@@ -164,8 +165,8 @@ export class RelatoriosViagemService {
     }
 
     const viagem = await this.carregarViagem(idEmpresa, idViagem);
-    const [abastecimentosPeriodo, despesas, multasPeriodo] = await Promise.all([
-      this.carregarAbastecimentosPeriodo(idEmpresa, periodo, viagem.idVeiculo),
+    const [abastecimentos, despesas, multasPeriodo] = await Promise.all([
+      this.carregarAbastecimentosDaViagem(idEmpresa, viagem),
       this.carregarDespesasViagemPeriodo(idEmpresa, periodo, idViagem),
       this.carregarMultasPeriodo(
         idEmpresa,
@@ -174,11 +175,6 @@ export class RelatoriosViagemService {
         viagem.idMotorista,
       ),
     ]);
-
-    const abastecimentos = this.filtrarAbastecimentosDaViagem(
-      abastecimentosPeriodo,
-      viagem,
-    );
     const multas = this.filtrarMultasDaViagem(multasPeriodo, viagem);
 
     const totalFaturado = this.arredondar(this.converterNumero(viagem.valorFrete));
@@ -270,10 +266,68 @@ export class RelatoriosViagemService {
     return resultado.viagem as ViagemRelatorio;
   }
 
-  private async carregarAbastecimentosPeriodo(
+  private async carregarAbastecimentosDaViagem(
     idEmpresa: number,
-    periodo: PeriodoRelatorio,
+    viagem: ViagemRelatorio,
+  ) {
+    const abastecimentosVinculados =
+      await this.carregarAbastecimentosPorVinculoViagem(
+        idEmpresa,
+        viagem.idViagem,
+      );
+    if (abastecimentosVinculados.length > 0) {
+      return abastecimentosVinculados;
+    }
+
+    const intervaloViagem = this.resolverIntervaloDaViagem(viagem);
+    return this.carregarAbastecimentosPorPeriodoViagem(
+      idEmpresa,
+      viagem.idVeiculo,
+      intervaloViagem.inicioData,
+      intervaloViagem.fimData,
+    );
+  }
+
+  private async carregarAbastecimentosPorVinculoViagem(
+    idEmpresa: number,
+    idViagem: number,
+  ) {
+    if (!Number.isFinite(idViagem) || idViagem <= 0) {
+      return [] as AbastecimentoRelatorio[];
+    }
+
+    return this.carregarAbastecimentosComFiltro(idEmpresa, {
+      idViagem: Math.trunc(idViagem),
+      ordenarPor: 'data_abastecimento',
+      ordem: 'DESC',
+    });
+  }
+
+  private async carregarAbastecimentosPorPeriodoViagem(
+    idEmpresa: number,
     idVeiculo: number,
+    dataDe: string,
+    dataAte: string,
+  ) {
+    return this.carregarAbastecimentosComFiltro(idEmpresa, {
+      idVeiculo,
+      dataDe,
+      dataAte,
+      ordenarPor: 'data_abastecimento',
+      ordem: 'DESC',
+    });
+  }
+
+  private async carregarAbastecimentosComFiltro(
+    idEmpresa: number,
+    filtro: {
+      idVeiculo?: number;
+      idViagem?: number;
+      dataDe?: string;
+      dataAte?: string;
+      ordenarPor?: 'data_abastecimento';
+      ordem?: 'ASC' | 'DESC';
+    },
   ) {
     const abastecimentos: AbastecimentoRelatorio[] = [];
     let pagina = 1;
@@ -283,13 +337,14 @@ export class RelatoriosViagemService {
       const resultado = (await this.abastecimentosService.listarComFiltro(
         idEmpresa,
         {
-          idVeiculo,
-          dataDe: periodo.inicioData,
-          dataAte: periodo.fimData,
+          idVeiculo: filtro.idVeiculo,
+          idViagem: filtro.idViagem,
+          dataDe: filtro.dataDe,
+          dataAte: filtro.dataAte,
           pagina,
           limite: this.limitePaginacao,
-          ordenarPor: 'data_abastecimento',
-          ordem: 'DESC',
+          ordenarPor: filtro.ordenarPor ?? 'data_abastecimento',
+          ordem: filtro.ordem ?? 'DESC',
         },
       )) as ResultadoPaginaAbastecimentos;
 
@@ -303,6 +358,32 @@ export class RelatoriosViagemService {
     }
 
     return abastecimentos;
+  }
+
+  private resolverIntervaloDaViagem(viagem: ViagemRelatorio) {
+    const inicio = this.converterDataParaDate(viagem.dataInicio);
+    const fimViagem = this.converterDataParaDate(viagem.dataFim);
+    const fim = fimViagem ?? new Date();
+
+    if (!inicio) {
+      const hoje = new Date();
+      return {
+        inicioData: hoje.toISOString().slice(0, 10),
+        fimData: hoje.toISOString().slice(0, 10),
+      };
+    }
+
+    if (fim < inicio) {
+      return {
+        inicioData: inicio.toISOString().slice(0, 10),
+        fimData: inicio.toISOString().slice(0, 10),
+      };
+    }
+
+    return {
+      inicioData: inicio.toISOString().slice(0, 10),
+      fimData: fim.toISOString().slice(0, 10),
+    };
   }
 
   private async carregarDespesasViagemPeriodo(
@@ -362,34 +443,6 @@ export class RelatoriosViagemService {
     }
 
     return multas;
-  }
-
-  private filtrarAbastecimentosDaViagem(
-    abastecimentos: AbastecimentoRelatorio[],
-    viagem: ViagemRelatorio,
-  ) {
-    const inicioMs = this.converterDataParaMs(viagem.dataInicio);
-    if (inicioMs === null) {
-      return [];
-    }
-
-    const fimMs = this.converterDataParaMs(viagem.dataFim);
-    return abastecimentos.filter((abastecimento) => {
-      const dataMs = this.converterDataParaMs(abastecimento.dataAbastecimento);
-      if (dataMs === null) {
-        return false;
-      }
-
-      if (dataMs < inicioMs) {
-        return false;
-      }
-
-      if (fimMs !== null && dataMs > fimMs) {
-        return false;
-      }
-
-      return true;
-    });
   }
 
   private filtrarMultasDaViagem(multas: MultaRelatorio[], viagem: ViagemRelatorio) {
@@ -519,12 +572,25 @@ export class RelatoriosViagemService {
       return null;
     }
 
+    const data = this.converterDataParaDate(valor);
+    if (!data) {
+      return null;
+    }
+
+    return data.getTime();
+  }
+
+  private converterDataParaDate(valor: Date | string | null | undefined) {
+    if (!valor) {
+      return null;
+    }
+
     const data = valor instanceof Date ? valor : new Date(valor);
     if (Number.isNaN(data.getTime())) {
       return null;
     }
 
-    return data.getTime();
+    return data;
   }
 
   private converterNumero(valor: unknown) {

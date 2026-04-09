@@ -18,6 +18,7 @@ type MapaColunasAbastecimento = {
   idEmpresa: string | null;
   idVeiculo: string;
   idFornecedor: string;
+  idViagem: string | null;
   dataAbastecimento: string;
   litros: string;
   valorLitro: string;
@@ -34,6 +35,7 @@ type AbastecimentoNormalizado = {
   idEmpresa: number | null;
   idVeiculo: number;
   idFornecedor: number;
+  idViagem: number | null;
   dataAbastecimento: Date;
   litros: number;
   valorLitro: number;
@@ -98,6 +100,20 @@ export class AbastecimentosService {
     this.validarIntervalosDoFiltro(filtro);
 
     return this.executarComRls(idEmpresa, async (manager, colunas) => {
+      const pagina = filtro.pagina ?? 1;
+      const limite = filtro.limite ?? 20;
+
+      if (filtro.idViagem !== undefined && !colunas.idViagem) {
+        return {
+          sucesso: true,
+          paginaAtual: pagina,
+          limite,
+          total: 0,
+          totalPaginas: 0,
+          abastecimentos: [],
+        };
+      }
+
       const filtros: string[] = [];
       const valores: Array<string | number> = [];
 
@@ -123,6 +139,11 @@ export class AbastecimentosService {
         filtros.push(
           `${this.quote(colunas.idFornecedor)} = $${valores.length}`,
         );
+      }
+
+      if (filtro.idViagem !== undefined && colunas.idViagem) {
+        valores.push(filtro.idViagem);
+        filtros.push(`${this.quote(colunas.idViagem)} = $${valores.length}`);
       }
 
       if (filtro.texto && colunas.observacao) {
@@ -197,8 +218,6 @@ export class AbastecimentosService {
       const whereSql =
         filtros.length > 0 ? `WHERE ${filtros.join(' AND ')}` : '';
 
-      const pagina = filtro.pagina ?? 1;
-      const limite = filtro.limite ?? 20;
       const offset = (pagina - 1) * limite;
       const ordem = filtro.ordem ?? 'DESC';
       const colunaOrdenacao = this.resolverColunaOrdenacao(
@@ -534,6 +553,12 @@ export class AbastecimentosService {
         ['id_fornecedor', 'fornecedor_id'],
         'id do fornecedor',
       )!,
+      idViagem: this.encontrarColuna(
+        set,
+        ['id_viagem', 'viagem_id'],
+        '',
+        false,
+      ),
       dataAbastecimento: this.encontrarColuna(
         set,
         ['data_abastecimento', 'data', 'data_lancamento', 'dt_abastecimento'],
@@ -840,6 +865,10 @@ export class AbastecimentosService {
           : null,
       idVeiculo: this.converterNumero(registro[colunas.idVeiculo]) ?? 0,
       idFornecedor: this.converterNumero(registro[colunas.idFornecedor]) ?? 0,
+      idViagem:
+        colunas.idViagem !== null
+          ? this.converterNumero(registro[colunas.idViagem])
+          : null,
       dataAbastecimento:
         this.converterData(registro[colunas.dataAbastecimento]) ?? new Date(0),
       litros,

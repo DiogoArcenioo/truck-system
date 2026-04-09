@@ -42,6 +42,12 @@ export class FiltroAbastecimentosDto {
   idFornecedor?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  idViagem?: number;
+
+  @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )
