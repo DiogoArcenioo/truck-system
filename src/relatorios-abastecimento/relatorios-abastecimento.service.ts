@@ -64,18 +64,6 @@ type VinculoAbastecimento = {
   idViagem: number | null;
   idMotorista: number | null;
   kmViagem: number | null;
-  dataInicioViagem: string | null;
-  dataFimViagem: string | null;
-};
-
-type ViagemVinculoIntervalo = {
-  idViagem: number;
-  idMotorista: number | null;
-  dataInicioMs: number;
-  dataFimMs: number | null;
-  kmViagem: number | null;
-  dataInicioIso: string | null;
-  dataFimIso: string | null;
 };
 
 type AcumuladorMediaMotorista = {
@@ -166,7 +154,6 @@ const colunasMediaVeiculo: ColunaTabela[] = [
 export class RelatoriosAbastecimentoService {
   private readonly limitePaginacao = 100;
   private readonly maxPaginasConsulta = 500;
-  private readonly janelaDiasViagens = 62;
 
   constructor(
     private readonly abastecimentosService: AbastecimentosService,
@@ -179,10 +166,12 @@ export class RelatoriosAbastecimentoService {
   ) {
     const periodo = this.resolverPeriodo(filtro);
     const filtrosRelacionados = this.extrairFiltrosRelacionados(filtro);
-    const [abastecimentos, viagens] = await Promise.all([
-      this.carregarAbastecimentosPeriodo(idEmpresa, periodo, filtrosRelacionados),
-      this.carregarViagensParaVinculo(idEmpresa, periodo, filtrosRelacionados),
-    ]);
+    const abastecimentos = await this.carregarAbastecimentosPeriodo(
+      idEmpresa,
+      periodo,
+      filtrosRelacionados,
+    );
+    const viagens = await this.carregarViagensVinculadas(idEmpresa, abastecimentos);
 
     const vinculos = this.vincularAbastecimentosComViagens(
       abastecimentos,
@@ -249,121 +238,50 @@ export class RelatoriosAbastecimentoService {
     return dados;
   }
 
-  private async carregarViagensParaVinculo(
+  private async carregarViagensVinculadas(
     idEmpresa: number,
-    periodo: PeriodoRelatorio,
-    filtrosRelacionados: FiltrosRelacionados,
+    abastecimentos: AbastecimentoRelatorio[],
   ): Promise<ViagemRelatorio[]> {
-    const inicioJanela = new Date(periodo.inicio);
-    inicioJanela.setUTCDate(inicioJanela.getUTCDate() - this.janelaDiasViagens);
-    const inicioJanelaData = inicioJanela.toISOString().slice(0, 10);
+    const idsViagem = Array.from(
+      new Set(
+        abastecimentos
+          .map((item) => this.converterInteiro(item.idViagem))
+          .filter((idViagem) => idViagem > 0),
+      ),
+    );
 
-    const [viagensFaixa, viagensAbertas] = await Promise.all([
-      this.carregarViagensComFiltro(idEmpresa, {
-        dataInicioDe: inicioJanelaData,
-        dataInicioAte: periodo.fimData,
-        idVeiculo: filtrosRelacionados.idVeiculo,
-        idMotorista: filtrosRelacionados.idMotorista,
+    if (idsViagem.length === 0) {
+      return [];
+    }
+
+    const resultados = await Promise.all(
+      idsViagem.map(async (idViagem) => {
+        const resultado = (await this.viagensService.listarComFiltro(idEmpresa, {
+          idViagem,
+          pagina: 1,
+          limite: 1,
+          ordenarPor: 'data_inicio',
+          ordem: 'DESC',
+        })) as ResultadoPaginaViagens;
+
+        return resultado.viagens?.[0] ?? null;
       }),
-      this.carregarViagensComFiltro(idEmpresa, {
-        dataInicioAte: periodo.fimData,
-        apenasAbertas: true,
-        idVeiculo: filtrosRelacionados.idVeiculo,
-        idMotorista: filtrosRelacionados.idMotorista,
-      }),
-    ]);
+    );
 
-    const mapa = new Map<number, ViagemRelatorio>();
-    for (const viagem of viagensFaixa) {
-      mapa.set(this.converterInteiro(viagem.idViagem), viagem);
-    }
-    for (const viagem of viagensAbertas) {
-      mapa.set(this.converterInteiro(viagem.idViagem), viagem);
-    }
-
-    return Array.from(mapa.values());
-  }
-
-  private async carregarViagensComFiltro(
-    idEmpresa: number,
-    filtro: {
-      dataInicioDe?: string;
-      dataInicioAte?: string;
-      apenasAbertas?: boolean;
-      idVeiculo?: number;
-      idMotorista?: number;
-    },
-  ): Promise<ViagemRelatorio[]> {
-    const dados: ViagemRelatorio[] = [];
-    let pagina = 1;
-    let totalPaginas = 1;
-
-    while (pagina <= totalPaginas && pagina <= this.maxPaginasConsulta) {
-      const resultado = (await this.viagensService.listarComFiltro(idEmpresa, {
-        dataInicioDe: filtro.dataInicioDe,
-        dataInicioAte: filtro.dataInicioAte,
-        apenasAbertas: filtro.apenasAbertas,
-        idVeiculo: filtro.idVeiculo,
-        idMotorista: filtro.idMotorista,
-        pagina,
-        limite: this.limitePaginacao,
-        ordenarPor: 'data_inicio',
-        ordem: 'DESC',
-      })) as ResultadoPaginaViagens;
-
-      dados.push(...(resultado.viagens ?? []));
-      totalPaginas = Math.max(1, this.converterInteiro(resultado.paginas));
-      pagina += 1;
-    }
-
-    return dados;
+    return resultados.filter((item): item is ViagemRelatorio => item !== null);
   }
 
   private vincularAbastecimentosComViagens(
     abastecimentos: AbastecimentoRelatorio[],
     viagens: ViagemRelatorio[],
   ): Map<number, VinculoAbastecimento> {
-    const viagensPorVeiculo = new Map<number, ViagemVinculoIntervalo[]>();
-    const viagensPorId = new Map<number, ViagemVinculoIntervalo>();
+    const viagensPorId = new Map<number, ViagemRelatorio>();
 
     for (const viagem of viagens) {
-      const idVeiculo = this.converterInteiro(viagem.idVeiculo);
-      if (idVeiculo <= 0) {
-        continue;
+      const idViagem = this.converterInteiro(viagem.idViagem);
+      if (idViagem > 0) {
+        viagensPorId.set(idViagem, viagem);
       }
-
-      const dataInicioMs = this.converterDataParaMs(viagem.dataInicio);
-      if (dataInicioMs === null) {
-        continue;
-      }
-
-      const dataFimMs = this.converterDataParaMs(viagem.dataFim);
-      const kmFinal = viagem.kmFinal !== null ? this.converterNumero(viagem.kmFinal) : null;
-      const kmInicial = this.converterNumero(viagem.kmInicial);
-
-      const item: ViagemVinculoIntervalo = {
-        idViagem: this.converterInteiro(viagem.idViagem),
-        idMotorista: this.converterInteiro(viagem.idMotorista) || null,
-        dataInicioMs,
-        dataFimMs,
-        kmViagem:
-          kmFinal !== null && kmFinal >= kmInicial
-            ? this.arredondar(kmFinal - kmInicial, 2)
-            : null,
-        dataInicioIso: this.converterDataParaIso(viagem.dataInicio),
-        dataFimIso: this.converterDataParaIso(viagem.dataFim),
-      };
-
-      const lista = viagensPorVeiculo.get(idVeiculo) ?? [];
-      lista.push(item);
-      viagensPorVeiculo.set(idVeiculo, lista);
-      if (item.idViagem > 0) {
-        viagensPorId.set(item.idViagem, item);
-      }
-    }
-
-    for (const lista of viagensPorVeiculo.values()) {
-      lista.sort((a, b) => a.dataInicioMs - b.dataInicioMs);
     }
 
     const vinculos = new Map<number, VinculoAbastecimento>();
@@ -379,59 +297,34 @@ export class RelatoriosAbastecimentoService {
         const viagemVinculada = viagensPorId.get(idViagemDireta);
         if (viagemVinculada) {
           vinculos.set(idAbastecimento, {
-            idViagem: viagemVinculada.idViagem,
-            idMotorista: viagemVinculada.idMotorista ?? null,
-            kmViagem: viagemVinculada.kmViagem ?? null,
-            dataInicioViagem: viagemVinculada.dataInicioIso ?? null,
-            dataFimViagem: viagemVinculada.dataFimIso ?? null,
+            idViagem: idViagemDireta,
+            idMotorista: this.converterInteiro(viagemVinculada.idMotorista) || null,
+            kmViagem: this.calcularKmViagem(viagemVinculada),
           });
           continue;
         }
       }
 
-      const idVeiculo = this.converterInteiro(abastecimento.idVeiculo);
-      const dataAbastecimentoMs = this.converterDataParaMs(
-        abastecimento.dataAbastecimento,
-      );
-
-      if (idVeiculo <= 0 || dataAbastecimentoMs === null) {
-        vinculos.set(idAbastecimento, {
-          idViagem: null,
-          idMotorista: null,
-          kmViagem: null,
-          dataInicioViagem: null,
-          dataFimViagem: null,
-        });
-        continue;
-      }
-
-      const viagensDoVeiculo = viagensPorVeiculo.get(idVeiculo) ?? [];
-      let viagemSelecionada: ViagemVinculoIntervalo | null = null;
-
-      for (let index = viagensDoVeiculo.length - 1; index >= 0; index -= 1) {
-        const viagem = viagensDoVeiculo[index];
-        if (dataAbastecimentoMs < viagem.dataInicioMs) {
-          continue;
-        }
-
-        if (viagem.dataFimMs !== null && dataAbastecimentoMs > viagem.dataFimMs) {
-          continue;
-        }
-
-        viagemSelecionada = viagem;
-        break;
-      }
-
       vinculos.set(idAbastecimento, {
-        idViagem: viagemSelecionada?.idViagem ?? null,
-        idMotorista: viagemSelecionada?.idMotorista ?? null,
-        kmViagem: viagemSelecionada?.kmViagem ?? null,
-        dataInicioViagem: viagemSelecionada?.dataInicioIso ?? null,
-        dataFimViagem: viagemSelecionada?.dataFimIso ?? null,
+        idViagem: idViagemDireta > 0 ? idViagemDireta : null,
+        idMotorista: null,
+        kmViagem: null,
       });
     }
 
     return vinculos;
+  }
+
+  private calcularKmViagem(viagem: ViagemRelatorio) {
+    const kmInicial = this.converterNumero(viagem.kmInicial);
+    const kmFinal =
+      viagem.kmFinal !== null ? this.converterNumero(viagem.kmFinal) : null;
+
+    if (kmFinal === null || kmFinal < kmInicial) {
+      return null;
+    }
+
+    return this.arredondar(kmFinal - kmInicial, 2);
   }
 
   private aplicarFiltroMotorista(
@@ -837,19 +730,6 @@ export class RelatoriosAbastecimentoService {
       idVeiculo: idVeiculo > 0 ? idVeiculo : undefined,
       idMotorista: idMotorista > 0 ? idMotorista : undefined,
     };
-  }
-
-  private converterDataParaMs(valor: Date | string | null | undefined) {
-    if (!valor) {
-      return null;
-    }
-
-    const data = valor instanceof Date ? valor : new Date(valor);
-    if (Number.isNaN(data.getTime())) {
-      return null;
-    }
-
-    return data.getTime();
   }
 
   private converterDataParaIso(valor: Date | string | null | undefined) {

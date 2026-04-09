@@ -18,6 +18,7 @@ type MapaColunasAbastecimentoDashboard = {
   idAbastecimento: string;
   idEmpresa: string | null;
   idVeiculo: string;
+  idViagem: string | null;
   dataAbastecimento: string;
   litros: string;
   valorLitro: string;
@@ -699,12 +700,27 @@ export class DashboardService {
           COALESCE(SUM(COALESCE(viagem.valor_frete, 0)::numeric), 0)::numeric AS faturamento,
           COALESCE(
             SUM(
-              COALESCE(viagem.total_abastecimentos, 0)::numeric +
+              COALESCE(abastecimento_viagem.total_abastecimentos_vinculados, 0)::numeric +
               COALESCE(viagem.total_despesas, 0)::numeric
             ),
             0
           )::numeric AS custo_total
         FROM app.viagens viagem
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(
+              SUM(
+                COALESCE(
+                  ab.valor_total::numeric,
+                  COALESCE(ab.litros::numeric, 0) * COALESCE(ab.valor_litro::numeric, 0)
+                )
+              ),
+              0
+            )::numeric AS total_abastecimentos_vinculados
+          FROM app.abastecimentos ab
+          WHERE ab.id_empresa = viagem.id_empresa
+            AND ab.id_viagem = viagem.id_viagem
+        ) abastecimento_viagem ON TRUE
         LEFT JOIN app.motoristas motorista
           ON motorista.id_empresa = viagem.id_empresa
          AND motorista.id_motorista = viagem.id_motorista
@@ -1064,15 +1080,25 @@ export class DashboardService {
     const kmColuna = this.colunaComAlias('ab', colunas.km);
     const idVeiculoColuna = this.colunaComAlias('ab', colunas.idVeiculo);
     const idAbastecimentoColuna = this.colunaComAlias('ab', colunas.idAbastecimento);
+    const idViagemColuna = colunas.idViagem
+      ? this.colunaComAlias('ab', colunas.idViagem)
+      : null;
     const custoExpr = this.expressaoCustoAbastecimento(colunas, 'ab');
     const filtroEmpresa = colunas.idEmpresa
       ? `${this.colunaComAlias('ab', colunas.idEmpresa)} = $1`
       : '$1::text IS NOT NULL';
+    const totalVinculadosExpr = idViagemColuna
+      ? `COUNT(1) FILTER (WHERE COALESCE(${idViagemColuna}::int, 0) > 0)`
+      : '0';
+    const idViagemSelect = idViagemColuna
+      ? `${idViagemColuna} AS id_viagem`
+      : 'NULL::int AS id_viagem';
 
     const resumoRows = (await manager.query(
       `
         SELECT
           COUNT(1)::int AS total_registros,
+          COALESCE(${totalVinculadosExpr}, 0)::int AS total_vinculados,
           COALESCE(SUM(COALESCE(${litrosColuna}::numeric, 0)), 0)::numeric AS litros_total,
           COALESCE(AVG(NULLIF(COALESCE(${valorLitroColuna}::numeric, 0), 0)), 0)::numeric AS preco_medio,
           COALESCE(SUM(${custoExpr}), 0)::numeric AS custo_total
@@ -1088,6 +1114,7 @@ export class DashboardService {
         SELECT
           ${idAbastecimentoColuna} AS id_abastecimento,
           ${idVeiculoColuna} AS id_veiculo,
+          ${idViagemSelect},
           ${dataColuna} AS data_abastecimento,
           COALESCE(${litrosColuna}::numeric, 0)::numeric AS litros,
           COALESCE(${valorLitroColuna}::numeric, 0)::numeric AS valor_litro,
@@ -1116,6 +1143,12 @@ export class DashboardService {
           tipo: 'numero',
         },
         {
+          chave: 'total_vinculados',
+          label: 'Abastecimentos vinculados a viagem',
+          valor: this.converterInteiro(resumo.total_vinculados),
+          tipo: 'numero',
+        },
+        {
           chave: 'litros_total',
           label: 'Total de litros',
           valor: this.arredondar(this.converterNumero(resumo.litros_total), 3),
@@ -1137,6 +1170,7 @@ export class DashboardService {
           colunas: [
             { chave: 'idAbastecimento', label: 'Abastecimento', tipo: 'numero' },
             { chave: 'idVeiculo', label: 'Veiculo', tipo: 'numero' },
+            { chave: 'idViagem', label: 'Viagem', tipo: 'numero' },
             { chave: 'dataAbastecimento', label: 'Data', tipo: 'data' },
             { chave: 'litros', label: 'Litros', tipo: 'numero' },
             { chave: 'valorLitro', label: 'Valor/litro', tipo: 'moeda' },
@@ -1146,6 +1180,7 @@ export class DashboardService {
           linhas: linhasRows.map((row) => ({
             idAbastecimento: this.converterInteiro(row.id_abastecimento),
             idVeiculo: this.converterInteiro(row.id_veiculo),
+            idViagem: this.converterInteiroOuNulo(row.id_viagem),
             dataAbastecimento: this.converterData(row.data_abastecimento),
             litros: this.arredondar(this.converterNumero(row.litros), 3),
             valorLitro: this.arredondar(this.converterNumero(row.valor_litro), 4),
@@ -2999,6 +3034,11 @@ export class DashboardService {
     return Math.trunc(this.converterNumero(valor));
   }
 
+  private converterInteiroOuNulo(valor: unknown): number | null {
+    const inteiro = this.converterInteiro(valor);
+    return inteiro > 0 ? inteiro : null;
+  }
+
   private converterTexto(valor: unknown): string | null {
     if (typeof valor !== 'string') {
       return null;
@@ -3106,6 +3146,12 @@ export class DashboardService {
         ['id_veiculo', 'veiculo_id'],
         'id do veiculo',
       )!,
+      idViagem: this.encontrarColuna(
+        set,
+        ['id_viagem', 'viagem_id'],
+        '',
+        false,
+      ),
       dataAbastecimento: this.encontrarColuna(
         set,
         ['data_abastecimento', 'data', 'data_lancamento', 'dt_abastecimento'],

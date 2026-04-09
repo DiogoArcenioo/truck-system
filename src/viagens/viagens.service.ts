@@ -70,17 +70,24 @@ export class ViagensService {
         where: { idEmpresa: String(idEmpresa), status: Not('I') },
         order: { dataInicio: 'DESC', idViagem: 'DESC' },
       });
-      const pesoPorViagem = await this.carregarMapaPesoViagens(
-        manager,
-        idEmpresa,
-        viagens.map((viagem) => viagem.idViagem),
-      );
+      const idsViagem = viagens.map((viagem) => viagem.idViagem);
+      const [pesoPorViagem, totalAbastecimentosPorViagem] = await Promise.all([
+        this.carregarMapaPesoViagens(manager, idEmpresa, idsViagem),
+        this.carregarMapaTotalAbastecimentosVinculados(
+          manager,
+          idsViagem,
+        ),
+      ]);
 
       return {
         sucesso: true,
         total: viagens.length,
         viagens: viagens.map((viagem) =>
-          this.mapearViagem(viagem, pesoPorViagem.get(viagem.idViagem) ?? null),
+          this.mapearViagem(
+            viagem,
+            pesoPorViagem.get(viagem.idViagem) ?? null,
+            totalAbastecimentosPorViagem?.get(viagem.idViagem) ?? null,
+          ),
         ),
       };
     });
@@ -96,17 +103,24 @@ export class ViagensService {
         },
         order: { dataInicio: 'DESC', idViagem: 'DESC' },
       });
-      const pesoPorViagem = await this.carregarMapaPesoViagens(
-        manager,
-        idEmpresa,
-        viagens.map((viagem) => viagem.idViagem),
-      );
+      const idsViagem = viagens.map((viagem) => viagem.idViagem);
+      const [pesoPorViagem, totalAbastecimentosPorViagem] = await Promise.all([
+        this.carregarMapaPesoViagens(manager, idEmpresa, idsViagem),
+        this.carregarMapaTotalAbastecimentosVinculados(
+          manager,
+          idsViagem,
+        ),
+      ]);
 
       return {
         sucesso: true,
         total: viagens.length,
         viagens: viagens.map((viagem) =>
-          this.mapearViagem(viagem, pesoPorViagem.get(viagem.idViagem) ?? null),
+          this.mapearViagem(
+            viagem,
+            pesoPorViagem.get(viagem.idViagem) ?? null,
+            totalAbastecimentosPorViagem?.get(viagem.idViagem) ?? null,
+          ),
         ),
       };
     });
@@ -261,11 +275,14 @@ export class ViagensService {
         .take(limite);
 
       const [viagens, total] = await query.getManyAndCount();
-      const pesoPorViagem = await this.carregarMapaPesoViagens(
-        manager,
-        idEmpresa,
-        viagens.map((viagem) => viagem.idViagem),
-      );
+      const idsViagem = viagens.map((viagem) => viagem.idViagem);
+      const [pesoPorViagem, totalAbastecimentosPorViagem] = await Promise.all([
+        this.carregarMapaPesoViagens(manager, idEmpresa, idsViagem),
+        this.carregarMapaTotalAbastecimentosVinculados(
+          manager,
+          idsViagem,
+        ),
+      ]);
 
       return {
         sucesso: true,
@@ -274,7 +291,11 @@ export class ViagensService {
         total,
         paginas: total > 0 ? Math.ceil(total / limite) : 0,
         viagens: viagens.map((viagem) =>
-          this.mapearViagem(viagem, pesoPorViagem.get(viagem.idViagem) ?? null),
+          this.mapearViagem(
+            viagem,
+            pesoPorViagem.get(viagem.idViagem) ?? null,
+            totalAbastecimentosPorViagem?.get(viagem.idViagem) ?? null,
+          ),
         ),
       };
     });
@@ -287,15 +308,18 @@ export class ViagensService {
         idEmpresa,
         idViagem,
       );
-      const peso = await this.carregarPesoDaViagem(
-        manager,
-        idEmpresa,
-        idViagem,
-      );
+      const [peso, totalAbastecimentosPorViagem] = await Promise.all([
+        this.carregarPesoDaViagem(manager, idEmpresa, idViagem),
+        this.carregarMapaTotalAbastecimentosVinculados(manager, [idViagem]),
+      ]);
 
       return {
         sucesso: true,
-        viagem: this.mapearViagem(viagem, peso ?? null),
+        viagem: this.mapearViagem(
+          viagem,
+          peso ?? null,
+          totalAbastecimentosPorViagem?.get(idViagem) ?? null,
+        ),
       };
     });
   }
@@ -350,16 +374,21 @@ export class ViagensService {
                 this.normalizarUsuarioAtualizacao(usuarioJwt.email),
             );
           }
-          const peso = await this.carregarPesoDaViagem(
-            manager,
-            idEmpresa,
-            viagem.idViagem,
-          );
+          const [peso, totalAbastecimentosPorViagem] = await Promise.all([
+            this.carregarPesoDaViagem(manager, idEmpresa, viagem.idViagem),
+            this.carregarMapaTotalAbastecimentosVinculados(manager, [
+              viagem.idViagem,
+            ]),
+          ]);
 
           return {
             sucesso: true,
             mensagem: 'Viagem cadastrada com sucesso.',
-            viagem: this.mapearViagem(viagem, peso ?? null),
+            viagem: this.mapearViagem(
+              viagem,
+              peso ?? null,
+              totalAbastecimentosPorViagem?.get(viagem.idViagem) ?? null,
+            ),
           };
         },
       );
@@ -430,16 +459,22 @@ export class ViagensService {
             idEmpresa,
             idViagem,
           );
-          const pesoAtualizado = await this.carregarPesoDaViagem(
-            manager,
-            idEmpresa,
-            idViagem,
-          );
+          const [pesoAtualizado, totalAbastecimentosPorViagem] =
+            await Promise.all([
+              this.carregarPesoDaViagem(manager, idEmpresa, idViagem),
+              this.carregarMapaTotalAbastecimentosVinculados(manager, [
+                idViagem,
+              ]),
+            ]);
 
           return {
             sucesso: true,
             mensagem: 'Viagem atualizada com sucesso.',
-            viagem: this.mapearViagem(viagemAtualizada, pesoAtualizado ?? null),
+            viagem: this.mapearViagem(
+              viagemAtualizada,
+              pesoAtualizado ?? null,
+              totalAbastecimentosPorViagem?.get(idViagem) ?? null,
+            ),
           };
         },
       );
@@ -751,6 +786,86 @@ export class ViagensService {
     return rows.length > 0;
   }
 
+  private async colunaIdViagemAbastecimentoExiste(
+    manager: EntityManager,
+  ): Promise<boolean> {
+    const rows = await manager.query(
+      `
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'app'
+        AND table_name = 'abastecimentos'
+        AND column_name = 'id_viagem'
+      LIMIT 1
+      `,
+    );
+
+    return rows.length > 0;
+  }
+
+  private async carregarMapaTotalAbastecimentosVinculados(
+    manager: EntityManager,
+    idsViagem: number[],
+  ): Promise<Map<number, number> | null> {
+    const idsValidos = Array.from(
+      new Set(
+        idsViagem
+          .filter((idViagem) => Number.isFinite(idViagem) && idViagem > 0)
+          .map((idViagem) => Math.trunc(idViagem)),
+      ),
+    );
+
+    const mapa = new Map<number, number>();
+    if (idsValidos.length === 0) {
+      return mapa;
+    }
+
+    const colunaExiste = await this.colunaIdViagemAbastecimentoExiste(manager);
+    if (!colunaExiste) {
+      return null;
+    }
+
+    idsValidos.forEach((idViagem) => {
+      mapa.set(idViagem, 0);
+    });
+
+    const rows = (await manager.query(
+      `
+      SELECT
+        id_viagem,
+        COALESCE(
+          SUM(
+            COALESCE(
+              valor_total::numeric,
+              COALESCE(litros::numeric, 0) * COALESCE(valor_litro::numeric, 0)
+            )
+          ),
+          0
+        )::numeric AS total_abastecimentos
+      FROM app.abastecimentos
+      WHERE id_viagem = ANY($1::int[])
+      GROUP BY id_viagem
+      `,
+      [idsValidos],
+    )) as Array<{ id_viagem?: unknown; total_abastecimentos?: unknown }>;
+
+    rows.forEach((row) => {
+      const idViagem = Number(row.id_viagem);
+      if (!Number.isFinite(idViagem)) {
+        return;
+      }
+
+      mapa.set(
+        idViagem,
+        this.converterNumero(
+          row.total_abastecimentos as string | number | null,
+        ) ?? 0,
+      );
+    });
+
+    return mapa;
+  }
+
   private async carregarMapaPesoViagens(
     manager: EntityManager,
     idEmpresa: number,
@@ -847,7 +962,19 @@ export class ViagensService {
   private mapearViagem(
     viagem: ViagemEntity,
     pesoExtra?: number | null,
+    totalAbastecimentosVinculados?: number | null,
   ): ViagemNormalizada {
+    const valorFrete = this.converterNumero(viagem.valorFrete);
+    const totalDespesas = this.converterNumero(viagem.totalDespesas);
+    const totalAbastecimentos =
+      totalAbastecimentosVinculados ??
+      this.converterNumero(viagem.totalAbastecimentos);
+    const totalLucroPersistido = this.converterNumero(viagem.totalLucro);
+    const totalLucroCalculado =
+      valorFrete !== null
+        ? valorFrete - (totalAbastecimentos ?? 0) - (totalDespesas ?? 0)
+        : totalLucroPersistido;
+
     return {
       idViagem: viagem.idViagem,
       idEmpresa: Number(viagem.idEmpresa),
@@ -859,12 +986,12 @@ export class ViagensService {
       kmFinal: viagem.kmFinal,
       status: viagem.status,
       observacao: viagem.observacao,
-      valorFrete: this.converterNumero(viagem.valorFrete),
+      valorFrete,
       media: this.converterNumero(viagem.media),
-      totalDespesas: this.converterNumero(viagem.totalDespesas),
-      totalAbastecimentos: this.converterNumero(viagem.totalAbastecimentos),
+      totalDespesas,
+      totalAbastecimentos,
       totalKm: viagem.totalKm,
-      totalLucro: this.converterNumero(viagem.totalLucro),
+      totalLucro: totalLucroCalculado,
       peso: pesoExtra ?? null,
       criadoEm: viagem.criadoEm,
       atualizadoEm: viagem.atualizadoEm,

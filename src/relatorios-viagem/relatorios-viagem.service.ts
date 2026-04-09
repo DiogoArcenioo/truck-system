@@ -270,21 +270,9 @@ export class RelatoriosViagemService {
     idEmpresa: number,
     viagem: ViagemRelatorio,
   ) {
-    const abastecimentosVinculados =
-      await this.carregarAbastecimentosPorVinculoViagem(
-        idEmpresa,
-        viagem.idViagem,
-      );
-    if (abastecimentosVinculados.length > 0) {
-      return abastecimentosVinculados;
-    }
-
-    const intervaloViagem = this.resolverIntervaloDaViagem(viagem);
-    return this.carregarAbastecimentosPorPeriodoViagem(
+    return this.carregarAbastecimentosPorVinculoViagem(
       idEmpresa,
-      viagem.idVeiculo,
-      intervaloViagem.inicioData,
-      intervaloViagem.fimData,
+      viagem.idViagem,
     );
   }
 
@@ -298,21 +286,6 @@ export class RelatoriosViagemService {
 
     return this.carregarAbastecimentosComFiltro(idEmpresa, {
       idViagem: Math.trunc(idViagem),
-      ordenarPor: 'data_abastecimento',
-      ordem: 'DESC',
-    });
-  }
-
-  private async carregarAbastecimentosPorPeriodoViagem(
-    idEmpresa: number,
-    idVeiculo: number,
-    dataDe: string,
-    dataAte: string,
-  ) {
-    return this.carregarAbastecimentosComFiltro(idEmpresa, {
-      idVeiculo,
-      dataDe,
-      dataAte,
       ordenarPor: 'data_abastecimento',
       ordem: 'DESC',
     });
@@ -358,32 +331,6 @@ export class RelatoriosViagemService {
     }
 
     return abastecimentos;
-  }
-
-  private resolverIntervaloDaViagem(viagem: ViagemRelatorio) {
-    const inicio = this.converterDataParaDate(viagem.dataInicio);
-    const fimViagem = this.converterDataParaDate(viagem.dataFim);
-    const fim = fimViagem ?? new Date();
-
-    if (!inicio) {
-      const hoje = new Date();
-      return {
-        inicioData: hoje.toISOString().slice(0, 10),
-        fimData: hoje.toISOString().slice(0, 10),
-      };
-    }
-
-    if (fim < inicio) {
-      return {
-        inicioData: inicio.toISOString().slice(0, 10),
-        fimData: inicio.toISOString().slice(0, 10),
-      };
-    }
-
-    return {
-      inicioData: inicio.toISOString().slice(0, 10),
-      fimData: fim.toISOString().slice(0, 10),
-    };
   }
 
   private async carregarDespesasViagemPeriodo(
