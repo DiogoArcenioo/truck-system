@@ -402,15 +402,16 @@ export class AbastecimentosService {
 
         const idVeiculo = payload.idVeiculo ?? atual.idVeiculo;
         const idFornecedor = payload.idFornecedor ?? atual.idFornecedor;
-        const idViagemEntrada =
-          payload.idViagem !== undefined ? payload.idViagem : atual.idViagem;
         const idViagem = colunas.idViagem
-          ? await this.resolverIdViagemParaAbastecimento(
-              manager,
-              idEmpresa,
-              idVeiculo,
-              idViagemEntrada,
-            )
+          ? payload.idViagem !== undefined
+            ? await this.resolverIdViagemParaAbastecimento(
+                manager,
+                idEmpresa,
+                idVeiculo,
+                payload.idViagem,
+                false,
+              )
+            : atual.idViagem
           : null;
         const dataAbastecimento =
           payload.dataAbastecimento ?? atual.dataAbastecimento;
@@ -814,6 +815,7 @@ export class AbastecimentosService {
     idEmpresa: number,
     idVeiculo: number,
     idViagemInformada: number | null,
+    buscarAbertaQuandoNulo = true,
   ): Promise<number | null> {
     if (idViagemInformada !== null) {
       if (!Number.isFinite(idViagemInformada) || idViagemInformada <= 0) {
@@ -832,6 +834,10 @@ export class AbastecimentosService {
       }
 
       return viagem.idViagem;
+    }
+
+    if (!buscarAbertaQuandoNulo) {
+      return null;
     }
 
     return this.buscarViagemAbertaMaisRecentePorVeiculo(
