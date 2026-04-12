@@ -18,6 +18,7 @@ import { MarcaVeiculoModule } from './marca-veiculo/marca-veiculo.module';
 import { ModeloVeiculoModule } from './modelo-veiculo/modelo-veiculo.module';
 import { MotoristasModule } from './motoristas/motoristas.module';
 import { MultasModule } from './multas/multas.module';
+import { NotasFiscaisAbastecimentoModule } from './notas-fiscais-abastecimento/notas-fiscais-abastecimento.module';
 import { OrdemServicoModule } from './ordem-servico/ordem-servico.module';
 import { ProdutoModule } from './produto/produto.module';
 import { ProdutoReferenciasModule } from './produto-referencias/produto-referencias.module';
@@ -83,6 +84,7 @@ import { ViagensModule } from './viagens/viagens.module';
     VeiculoModule,
     MotoristasModule,
     MultasModule,
+    NotasFiscaisAbastecimentoModule,
     ViagensModule,
     PneusModule,
     ProdutoModule,
