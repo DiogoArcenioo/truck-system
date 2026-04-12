@@ -19,6 +19,8 @@ type MapaColunasAbastecimento = {
   idVeiculo: string;
   idFornecedor: string;
   idViagem: string | null;
+  idNotaFiscal: string | null;
+  origemLancamento: string | null;
   dataAbastecimento: string;
   litros: string;
   valorLitro: string;
@@ -36,6 +38,8 @@ type AbastecimentoNormalizado = {
   idVeiculo: number;
   idFornecedor: number;
   idViagem: number | null;
+  idNotaFiscal: number | null;
+  origemLancamento: string | null;
   dataAbastecimento: Date;
   litros: number;
   valorLitro: number;
@@ -602,6 +606,18 @@ export class AbastecimentosService {
         '',
         false,
       ),
+      idNotaFiscal: this.encontrarColuna(
+        set,
+        ['id_nota_fiscal'],
+        '',
+        false,
+      ),
+      origemLancamento: this.encontrarColuna(
+        set,
+        ['origem_lancamento'],
+        '',
+        false,
+      ),
       dataAbastecimento: this.encontrarColuna(
         set,
         ['data_abastecimento', 'data', 'data_lancamento', 'dt_abastecimento'],
@@ -1024,6 +1040,14 @@ export class AbastecimentosService {
       idViagem:
         colunas.idViagem !== null
           ? this.converterNumero(registro[colunas.idViagem])
+          : null,
+      idNotaFiscal:
+        colunas.idNotaFiscal !== null
+          ? this.converterNumero(registro[colunas.idNotaFiscal])
+          : null,
+      origemLancamento:
+        colunas.origemLancamento !== null
+          ? this.converterTexto(registro[colunas.origemLancamento])
           : null,
       dataAbastecimento:
         this.converterData(registro[colunas.dataAbastecimento]) ?? new Date(0),
