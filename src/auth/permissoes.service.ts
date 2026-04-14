@@ -83,6 +83,11 @@ const ROTAS_SISTEMA_POR_MODULO: Array<{
   },
   { prefixos: ['/api/dashboard', '/api/sistema/dashboard'], modulos: ['home'] },
   { prefixos: ['/api/viagens', '/api/sistema/viagens'], modulos: ['viagens'] },
+  { prefixos: ['/api/cte', '/api/sistema/cte'], modulos: ['cte'] },
+  {
+    prefixos: ['/api/manifesto', '/api/sistema/manifesto'],
+    modulos: ['manifestos'],
+  },
   {
     prefixos: ['/api/requisicao', '/api/sistema/requisicao'],
     modulos: ['requisicao'],
