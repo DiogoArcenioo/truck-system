@@ -8,5 +8,6 @@ import { RelatoriosFaturamentoService } from './relatorios-faturamento.service';
   imports: [ViagensModule, DespesasModule],
   controllers: [RelatoriosFaturamentoController],
   providers: [RelatoriosFaturamentoService],
+  exports: [RelatoriosFaturamentoService],
 })
 export class RelatoriosFaturamentoModule {}
